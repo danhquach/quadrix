@@ -1,5 +1,7 @@
+import type { Move } from '../core/session.ts';
+
 /** A player action, from a gesture, an on-screen button or a key. */
-export type Action = 'left' | 'right' | 'rotate' | 'softDrop' | 'hardDrop' | 'pause';
+export type Action = Move | 'pause';
 
 export const ACTIONS: readonly Action[] = [
   'left',

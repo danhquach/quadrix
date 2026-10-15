@@ -99,6 +99,42 @@ p {
   background: #000;
   outline: 1px solid #444;
 }
+/* Paused or counting down: an opaque cover over the whole well, so the board
+   can't be studied while the clock is stopped. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #111;
+}
+.overlay[hidden],
+.pause-menu[hidden] {
+  display: none;
+}
+.pause-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 10em;
+}
+.pause-title {
+  text-align: center;
+  font-size: 1.5rem;
+}
+.pause-menu button {
+  min-height: 44px;
+  font-size: 1.1rem;
+}
+.countdown:empty {
+  display: none;
+}
+.countdown {
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+}
 /* Landscape: the HUD sits beside the board. */
 @media (orientation: landscape) {
   .app {
