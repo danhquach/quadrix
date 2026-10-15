@@ -1,0 +1,6 @@
+dist/
+coverage/
+node_modules/
+package-lock.json
+# Machine-local, git-ignored, and rewritten by the Claude Code harness.
+.claude/settings.local.json

@@ -3,6 +3,7 @@ export const KINDS = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'] as const;
 export type Kind = (typeof KINDS)[number];
 
 /** Spawn-orientation shapes as [x, y] cell offsets. */
+// prettier-ignore
 const SHAPES: Record<Kind, readonly (readonly [number, number])[]> = {
   I: [[0, 1], [1, 1], [2, 1], [3, 1]],
   O: [[1, 0], [2, 0], [1, 1], [2, 1]],
