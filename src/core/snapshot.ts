@@ -5,7 +5,7 @@ import { classic } from './modes/classic.ts';
 import { KINDS, type Kind } from './pieces.ts';
 
 /** Bump when the format changes; older snapshots are then discarded, not migrated. */
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 /** Longest snapshot text accepted. A real one is well under 1 KB. */
 export const MAX_SNAPSHOT_CHARS = 4096;
@@ -27,6 +27,9 @@ export interface Snapshot {
   bag: Kind[];
   pieces: number;
   rung: number | null;
+  streak: number;
+  b2b: boolean;
+  spun: boolean;
 }
 
 /** The snapshot of a game in progress, as JSON text. */
@@ -70,7 +73,11 @@ export function fromSnapshot(text: string): Game | null {
     !isInt(s.rng, 0, 0xffffffff) ||
     !isBag(s.bag) ||
     !isInt(s.pieces, 0, MAX_COUNT) ||
-    !(s.rung === null || isInt(s.rung, 1, MAX_RUNGS))
+    !(s.rung === null || isInt(s.rung, 1, MAX_RUNGS)) ||
+    // Every drop in a streak cleared a line, and back-to-back needs a clear behind it.
+    !isInt(s.streak, 0, Math.min(s.pieces, s.lines)) ||
+    !(s.b2b === false || (s.b2b === true && s.lines > 0)) ||
+    !(s.spun === false || (s.spun === true && piece.kind === 'T'))
   ) {
     return null;
   }
@@ -96,6 +103,9 @@ export function fromSnapshot(text: string): Game | null {
     bag: { rng: s.rng, bag: s.bag },
     pieces: s.pieces,
     rung: s.rung,
+    streak: s.streak,
+    b2b: s.b2b,
+    spun: s.spun,
   });
   return game.fits(game.state.piece) ? game : null;
 }
@@ -113,6 +123,9 @@ const SNAPSHOT_KEYS = [
   'bag',
   'pieces',
   'rung',
+  'streak',
+  'b2b',
+  'spun',
 ] as const;
 const PIECE_KEYS = ['kind', 'rot', 'x', 'y'] as const;
 

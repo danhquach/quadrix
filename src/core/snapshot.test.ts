@@ -63,6 +63,34 @@ describe('snapshot round trip', () => {
     }
   });
 
+  it('keeps the scoring chain: combo streak, back-to-back and a T piece just rotated', () => {
+    // 6 pieces and 2 lines leave 4 cells: one O on the floor. Streak 2 is within lines 2.
+    const board = new Game(MODES.classic!, 1).save().board;
+    board[ROWS - 1]![0] = board[ROWS - 1]![1] = board[ROWS - 2]![0] = board[ROWS - 2]![1] = 2;
+    const start = { ...new Game(MODES.classic!, 1).save(), board, lines: 2, pieces: 6 };
+    const g = new Game(MODES.classic!, start);
+    g.state.piece = { kind: 'T', rot: 0, x: 3, y: 0 };
+    expect(g.rotate()).toBe(true);
+    const saved = { ...g.save(), streak: 2, b2b: true };
+    const text = toSnapshot(new Game(MODES.classic!, saved));
+    expect(JSON.parse(text)).toMatchObject({ streak: 2, b2b: true, spun: true });
+    expect(fromSnapshot(text)!.save()).toEqual(saved);
+  });
+
+  it('reads a streak too big for a safe integer as invalid', () => {
+    expect(fromSnapshot(toSnapshot(played()).replace('"streak":0', '"streak":1e400'))).toBeNull();
+  });
+
+  it('accepts a just-rotated flag only on a T piece', () => {
+    const g = new Game(MODES.classic!, 1);
+    for (const kind of ['T', 'O'] as const) {
+      g.state.piece = { kind, rot: 0, x: 3, y: 0 };
+      const snap = { ...(JSON.parse(toSnapshot(g)) as object), spun: true };
+      expect(parse(snap) !== null).toBe(kind === 'T');
+      expect(parse({ ...snap, spun: false })).not.toBeNull();
+    }
+  });
+
   it('keeps the mode', () => {
     const g = new Game(MODES.override!, 3);
     expect(fromSnapshot(toSnapshot(g))!.state.mode).toBe(MODES.override);
@@ -132,6 +160,23 @@ describe('snapshot rejects bad input', () => {
     ['piece far away', (s) => ({ ...s, piece: { ...piece(s), x: 1e9 } })],
     ['piece extra key', (s) => ({ ...s, piece: { ...piece(s), color: 1 } })],
     ['piece as array', (s) => ({ ...s, piece: [0, 0, 0, 0] })],
+    ['streak as string', (s) => ({ ...s, streak: '1' })],
+    ['negative streak', (s) => ({ ...s, streak: -1 })],
+    ['fractional streak', (s) => ({ ...s, streak: 0.5 })],
+    ['streak over the pieces locked', (s) => ({ ...s, streak: (s.pieces as number) + 1 })],
+    ['streak over the lines cleared', (s) => ({ ...s, streak: (s.lines as number) + 1 })],
+    ['streak missing', (s) => ({ ...s, streak: undefined })],
+    ['streak as null', (s) => ({ ...s, streak: null })],
+    ['unsafe streak', (s) => ({ ...s, streak: 2 ** 60 })],
+    ['b2b as null', (s) => ({ ...s, b2b: null })],
+    ['b2b with no lines cleared', (s) => ({ ...s, b2b: true })],
+    ['spun missing', (s) => ({ ...s, spun: undefined })],
+    ['spun as number', (s) => ({ ...s, spun: 1 })],
+    ['spun as null', (s) => ({ ...s, spun: null })],
+    ['b2b as number', (s) => ({ ...s, b2b: 1 })],
+    ['b2b as string', (s) => ({ ...s, b2b: 'true' })],
+    ['b2b missing', (s) => ({ ...s, b2b: undefined })],
+    ['spun as string', (s) => ({ ...s, spun: 'true' })],
     [
       'piece overlapping the stack',
       (s) => ({ ...s, board: (s.board as number[][]).map((r) => r.map(() => 1)) }),
@@ -268,7 +313,18 @@ describe('snapshot of a ladder rung', () => {
     const old = valid();
     delete old.rung;
     delete old.pieces;
+    delete old.streak;
+    delete old.b2b;
+    delete old.spun;
     expect(parse({ ...old, v: 1 })).toBeNull();
-    expect(SNAPSHOT_VERSION).toBe(2);
+  });
+
+  it('rejects a version 2 snapshot, which had no scoring chain', () => {
+    const old = valid();
+    delete old.streak;
+    delete old.b2b;
+    delete old.spun;
+    expect(parse({ ...old, v: 2 })).toBeNull();
+    expect(SNAPSHOT_VERSION).toBe(3);
   });
 });
