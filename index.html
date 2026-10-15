@@ -21,19 +21,13 @@
             spellcheck="false"
           />
         </label>
-        <p class="best">Best <span id="best">0</span></p>
+        <p id="best-row" class="best">Best <span id="best">0</span></p>
         <div class="controls">
-          <label>
-            Mode
-            <select id="mode">
-              <option value="classic">Classic</option>
-              <option value="override">Override</option>
-            </select>
-          </label>
-          <button id="start" type="button">Start</button>
           <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
         </div>
         <div class="hud">
+          <p id="rung-row" hidden>Rung <span id="rung">1</span></p>
+          <p id="goal-row" hidden>Goal <span id="goal">0 / 0</span></p>
           <p>Score <span id="score">0</span></p>
           <p>Lines <span id="lines">0</span></p>
           <p>Level <span id="level">1</span></p>
@@ -48,7 +42,30 @@
       <div class="well">
         <canvas id="board" role="img" aria-label="Game board"></canvas>
         <div id="overlay" class="overlay" hidden>
+          <p id="goal-text" class="goal-text"></p>
           <p id="countdown" class="countdown"></p>
+          <div id="menu" class="pause-menu" role="group" aria-label="Main menu" hidden>
+            <p class="pause-title">Play</p>
+            <button id="play-ladder" type="button">Ladder</button>
+            <button type="button" data-mode="classic">Classic</button>
+            <button type="button" data-mode="override">Override</button>
+          </div>
+          <div id="ladder" class="pause-menu ladder" role="group" aria-label="Ladder" hidden>
+            <div class="ladder-head">
+              <button id="ladder-back" type="button">Back</button>
+              <p class="pause-title">Ladder</p>
+              <button id="ladder-current" type="button">Current</button>
+            </div>
+            <ol id="rung-list" class="rung-list" aria-label="Rungs"></ol>
+          </div>
+          <div id="result" class="pause-menu" role="group" aria-labelledby="result-title" hidden>
+            <p id="result-title" class="pause-title"></p>
+            <p id="result-stars" class="result-stars"></p>
+            <p id="result-detail" class="result-detail"></p>
+            <button id="result-next" type="button">Next</button>
+            <button id="result-retry" type="button">Retry</button>
+            <button id="result-back" type="button">Ladder</button>
+          </div>
           <div id="pause-menu" class="pause-menu" role="group" aria-label="Paused">
             <p class="pause-title">Paused</p>
             <button id="resume" type="button">Resume</button>

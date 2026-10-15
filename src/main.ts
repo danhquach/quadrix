@@ -1,15 +1,25 @@
 import { COLS, Game, ROWS } from './core/game.ts';
+import {
+  MAX_RUNGS,
+  rung,
+  rungOutcome,
+  rungStars,
+  startRung,
+  type Rung,
+  type RungOutcome,
+} from './core/ladder.ts';
 import { MODES } from './core/modes/index.ts';
 import { Session } from './core/session.ts';
 import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
-import { recordGame, rename } from './core/profile.ts';
+import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { keyAction } from './ui/keys.ts';
+import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
-import { PlayedGame, hasLocked } from './ui/played.ts';
+import { PlayedGame } from './ui/played.ts';
 import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/profile.ts';
-import { clearSave, loadSave, writeSave } from './ui/save.ts';
+import { clearSave, loadSave, resumable, writeSave } from './ui/save.ts';
 
 const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
 
@@ -18,14 +28,22 @@ const ctx = canvas.getContext('2d')!;
 const well = document.querySelector<HTMLElement>('.well')!;
 const nextCanvas = document.querySelector<HTMLCanvasElement>('#next')!;
 const nextCtx = nextCanvas.getContext('2d')!;
-const modeSelect = document.querySelector<HTMLSelectElement>('#mode')!;
-const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const pauseMenu = document.querySelector<HTMLElement>('#pause-menu')!;
 const resumeBtn = document.querySelector<HTMLButtonElement>('#resume')!;
 const resumePrompt = document.querySelector<HTMLElement>('#resume-prompt')!;
 const resumeSavedBtn = document.querySelector<HTMLButtonElement>('#resume-saved')!;
 const nameInput = document.querySelector<HTMLInputElement>('#name')!;
+const mainMenu = document.querySelector<HTMLElement>('#menu')!;
+const ladderBtn = document.querySelector<HTMLButtonElement>('#play-ladder')!;
+const ladderPanel = document.querySelector<HTMLElement>('#ladder')!;
+const ladderBack = document.querySelector<HTMLButtonElement>('#ladder-back')!;
+const ladderCurrent = document.querySelector<HTMLButtonElement>('#ladder-current')!;
+const rungList = document.querySelector<HTMLElement>('#rung-list')!;
+const resultPanel = document.querySelector<HTMLElement>('#result')!;
+const resultNext = document.querySelector<HTMLButtonElement>('#result-next')!;
+const resultRetry = document.querySelector<HTMLButtonElement>('#result-retry')!;
+const resultBack = document.querySelector<HTMLButtonElement>('#result-back')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -35,10 +53,22 @@ function setText(id: string, text: string): void {
 }
 
 let session: Session | null = null;
+/** The rung of the game in play or just finished, or null for a free game. */
+let rungNow: Rung | null = null;
+/** How the last game ended, shown on the result screen. */
+let result: { game: Game; outcome: RungOutcome; stars: number } | null = null;
+/** When the result screen appeared (performance.now()). */
+let resultAt = 0;
+/** Taps and keys this soon after a game ends are the game's, not the result's buttons. */
+const RESULT_GUARD_MS = 400;
+/** What shows over the board when no game is in play. */
+let screen: 'menu' | 'ladder' | 'result' = 'menu';
+/** The free mode last chosen, whose Best shows in the menus. */
+let menuMode = 'classic';
+/** The top row's rung on the ladder screen. */
+let ladderTopRow = 1;
 /** Reading `localStorage` itself throws where storage is blocked; save.ts catches that. */
 const storage = () => window.localStorage;
-/** An unfinished game from before a reload, offered until the player resumes or discards it. */
-let saved: Game | null = loadSave(storage);
 /** The game's lock count at its last save. */
 let savedLocks = 0;
 
@@ -54,10 +84,14 @@ writeProfile(profileStorage, profile);
 nameInput.value = profile.name;
 const playedGame = new PlayedGame();
 
-/** Add a played game to the profile. */
+/** An unfinished game from before a reload, offered until the player resumes or discards it. */
+let saved: Game | null = loadSave(storage, highestRung(profile));
+
+/** Add a played game to the profile; a rung counts toward totals only. */
 function recordPlayed(game: Game): void {
   const { mode, score, lines } = game.state;
-  profile = updateProfile(profileStorage, profile, (p) => recordGame(p, mode.id, score, lines));
+  const id = game.rung === null ? mode.id : null;
+  profile = updateProfile(profileStorage, profile, (p) => recordGame(p, id, score, lines));
 }
 
 /** Record the session's game, once, when it ends: game over, Quit, Restart or a new Start. */
@@ -127,51 +161,215 @@ function watchPixelRatio(): void {
   );
 }
 
-function start(): void {
-  const mode = MODES[modeSelect.value] ?? MODES.classic!;
+/** Play `game`, ending any game in play; with the 3-2-1 countdown first if `countdown`. */
+function begin(game: Game, countdown: boolean): void {
   endSession();
   saved = null;
-  session = new Session(new Game(mode), performance.now());
+  result = null;
+  rungNow = game.rung === null ? null : rung(game.rung);
+  session = new Session(game, performance.now());
+  if (countdown) {
+    session.pause();
+    session.resume(performance.now());
+  }
   persist();
-  setText('#status', mode.name);
-  startBtn.blur();
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
+
+/** A free game in mode `id` (Classic if unknown). */
+function playMode(id: string | undefined, countdown = false): void {
+  const mode = (id !== undefined && Object.hasOwn(MODES, id) ? MODES[id] : null) ?? MODES.classic!;
+  menuMode = mode.id;
+  begin(new Game(mode), countdown);
+}
+
+/** Rung `index`, if unlocked, after a countdown that shows its goal. */
+function playRung(index: number): void {
+  if (!Number.isSafeInteger(index) || index < 1 || index > highestRung(profile)) return;
+  begin(startRung(rung(index)), true);
 }
 
 /** Continue the game saved before a reload, paused: Resume counts down as usual. */
 function resumeSaved(): void {
   if (!saved) return;
-  modeSelect.value = saved.state.mode.id;
+  // Another tab may have reset the profile since the offer appeared.
+  if (!resumable(saved, highestRung(profile))) {
+    discardSaved();
+    return;
+  }
+  if (saved.rung === null) menuMode = saved.state.mode.id;
+  rungNow = saved.rung === null ? null : rung(saved.rung);
+  result = null;
   session = new Session(saved, performance.now());
   session.pause();
   savedLocks = session.game.locks;
-  if (hasLocked(saved.state)) playedGame.played();
+  if (saved.locks > 0) playedGame.played();
   saved = null;
 }
 
 function discardSaved(): void {
-  if (saved && hasLocked(saved.state)) recordPlayed(saved);
+  if (saved && saved.locks > 0) recordPlayed(saved);
   saved = null;
   clearSave(storage);
-  startBtn.disabled = false;
-  startBtn.focus();
 }
 
 /** A new game from the pause menu: it gets the 3-2-1 countdown, like Resume. */
 function restart(): void {
-  start();
-  session!.pause();
-  session!.resume(performance.now());
+  if (!session) return;
+  const game = session.game;
+  if (game.rung === null) playMode(game.state.mode.id, true);
+  else playRung(game.rung);
 }
 
-/** Back to the title state: no game. */
+/** Drop any gesture or held button in progress. */
+function stopInput(): void {
+  stopRepeat();
+  gestures.cancel();
+  touchId = null;
+}
+
+/** Leave the game in play: back to the ladder from a rung, else to the main menu. */
 function quit(): void {
+  const wasRung = rungNow !== null;
   endSession();
   session = null;
   clearSave(storage);
-  stopRepeat();
-  gestures.cancel();
-  setText('#status', '');
-  startBtn.focus();
+  stopInput();
+  if (wasRung) openLadder();
+  else screen = 'menu';
+}
+
+/** End the game in play once it's decided (rung passed or failed, game over); else save on lock. */
+function settle(): void {
+  if (!session) return;
+  const game = session.game;
+  const outcome = rungNow
+    ? rungOutcome(rungNow, game.state)
+    : game.state.over
+      ? 'failed'
+      : 'playing';
+  if (outcome === 'playing') {
+    persistOnLock();
+    return;
+  }
+  if (game.locks !== savedLocks) playedGame.played();
+  let stars = 0;
+  if (rungNow && outcome === 'passed') {
+    const r = rungNow;
+    const earned = rungStars(r, game.locks);
+    stars = earned;
+    profile = updateProfile(profileStorage, profile, (p) => recordRung(p, r.index, earned));
+  }
+  endSession();
+  session = null;
+  clearSave(storage);
+  stopInput();
+  result = { game, outcome, stars };
+  screen = 'result';
+  resultAt = performance.now();
+  showResult();
+}
+
+/** Fill the result screen for `result`. */
+function showResult(): void {
+  if (!result) return;
+  const { game, outcome, stars } = result;
+  const s = game.state;
+  const r = rungNow;
+  if (!r) {
+    setText('#result-title', 'Game over');
+    setText('#result-stars', '');
+    setText('#result-detail', `Score ${s.score}`);
+  } else if (outcome === 'passed') {
+    setText('#result-title', 'Passed');
+    setText('#result-stars', starText(stars));
+    setText('#result-detail', `Rung ${r.index} · ${game.locks} pieces`);
+  } else {
+    setText('#result-title', 'Failed');
+    setText('#result-stars', '');
+    setText('#result-detail', `Rung ${r.index} · ${s.lines} / ${r.goalLines} lines`);
+  }
+  $('#result-stars').setAttribute('aria-label', `${stars} of 3 stars`);
+  $('#result-stars').hidden = stars === 0;
+  resultNext.hidden = !r || outcome !== 'passed' || r.index >= MAX_RUNGS;
+  resultRetry.textContent = r ? 'Retry' : 'Play again';
+  resultBack.textContent = r ? 'Ladder' : 'Menu';
+  // After a pass Next leads on; at the last rung, back to the ladder instead.
+  resultBack.hidden = r !== null && !resultNext.hidden;
+}
+
+/** Show the ladder at the page holding the current rung. */
+function openLadder(): void {
+  screen = 'ladder';
+  rungNow = null;
+  result = null;
+  ladderTopRow = ladderTop(highestRung(profile));
+  renderLadder();
+  renderOverlay();
+  scrollToCurrent();
+}
+
+let currentSeen: IntersectionObserver | null = null;
+
+/** Build the ladder page from ladderTopRow. Current shows while the current rung is out of view. */
+function renderLadder(): void {
+  const highest = highestRung(profile);
+  const page = ladderPage(profile.stars, highest, ladderTopRow);
+  ladderTopRow = page.top;
+  const items: HTMLElement[] = [];
+  const pager = (label: string, top: number): HTMLElement => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pager';
+    btn.dataset.top = String(top);
+    btn.textContent = label;
+    li.append(btn);
+    return li;
+  };
+  if (page.higher) items.push(pager('Higher rungs', page.top + PAGE));
+  for (const row of page.rows) {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `rung ${row.state}`;
+    btn.dataset.rung = String(row.index);
+    const name = document.createElement('span');
+    name.textContent = `Rung ${row.index}`;
+    const stars = document.createElement('span');
+    stars.className = 'stars';
+    stars.textContent = row.state === 'locked' ? 'Locked' : starText(row.stars);
+    btn.append(name, stars);
+    const status =
+      row.state === 'locked' ? 'locked' : row.stars ? `${row.stars} of 3 stars` : 'not passed';
+    btn.setAttribute('aria-label', `Rung ${row.index}, ${status}`);
+    btn.disabled = row.state === 'locked';
+    if (row.state === 'current') btn.setAttribute('aria-current', 'step');
+    li.append(btn);
+    items.push(li);
+  }
+  if (page.lower) items.push(pager('Lower rungs', Math.max(1, page.top - PAGE)));
+  rungList.replaceChildren(...items);
+
+  currentSeen?.disconnect();
+  const current = rungList.querySelector('.current');
+  ladderCurrent.style.visibility = current ? 'hidden' : 'visible';
+  if (current) {
+    currentSeen = new IntersectionObserver(
+      ([e]) => {
+        ladderCurrent.style.visibility = e?.isIntersecting ? 'hidden' : 'visible';
+      },
+      { root: rungList, threshold: 0.5 },
+    );
+    currentSeen.observe(current);
+  }
+}
+
+/** Scroll the ladder list so the current rung sits in its middle. */
+function scrollToCurrent(): void {
+  const current = rungList.querySelector<HTMLElement>('.current');
+  if (!current) return;
+  rungList.scrollTop = current.offsetTop - (rungList.clientHeight - current.offsetHeight) / 2;
 }
 
 /** Pause and drop any gesture or held button in progress. */
@@ -179,9 +377,7 @@ function pause(): void {
   if (!session) return;
   session.pause();
   persist();
-  stopRepeat();
-  gestures.cancel();
-  touchId = null;
+  stopInput();
 }
 
 function drawCell(
@@ -222,41 +418,75 @@ function showMenu(menu: HTMLElement, show: boolean, first: HTMLElement): void {
   if (menu.hidden !== show) return;
   menu.hidden = !show;
   // Pausing to type a name leaves the focus in the name field.
-  if (show && document.activeElement !== nameInput) first.focus();
+  if (show && document.activeElement !== nameInput) first.focus({ preventScroll: true });
   else if (menu.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
 }
 
-/** Show the resume offer, the pause menu or the countdown over the board, or none. */
+/**
+ * Show what covers the board: with no game in play the resume offer (answered first, as
+ * a new game would overwrite it) or the menu, ladder or result screen; in play the pause
+ * menu or countdown, with a rung's goal.
+ */
 function renderOverlay(): void {
   const phase = session?.phase ?? 'running';
   const offer = !session && saved !== null;
-  const shown = offer || phase !== 'running';
+  const idle = !session && !offer;
+  const shown = !session || phase !== 'running';
   if (overlay.hidden === shown) overlay.hidden = !shown;
-  // Start would overwrite the offered game, so the player answers the offer first.
-  if (startBtn.disabled !== offer) startBtn.disabled = offer;
+  // The result leaves the final board in sight.
+  overlay.classList.toggle('see-through', idle && screen === 'result');
   showMenu(resumePrompt, offer, resumeSavedBtn);
   showMenu(pauseMenu, phase === 'paused', resumeBtn);
+  showMenu(mainMenu, idle && screen === 'menu', ladderBtn);
+  showMenu(
+    ladderPanel,
+    idle && screen === 'ladder',
+    rungList.querySelector<HTMLElement>('.current') ?? ladderBack,
+  );
+  showMenu(resultPanel, idle && screen === 'result', resultNext.hidden ? resultRetry : resultNext);
   setText('#countdown', phase === 'countdown' ? String(session!.countdown(performance.now())) : '');
+  const r = session && phase !== 'running' ? rungNow : null;
+  setText(
+    '#goal-text',
+    r ? `Rung ${r.index}: clear ${r.goalLines} lines · ★★★ within ${r.stars.three} pieces` : '',
+  );
+}
+
+/** Set `hidden` only when it changes. */
+function setHidden(id: string, hidden: boolean): void {
+  const el = $(id);
+  if (el.hidden !== hidden) el.hidden = hidden;
 }
 
 function render(): void {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   renderOverlay();
-  const modeId = session?.game.state.mode.id ?? modeSelect.value;
+  // The game in play, or the finished one under its result.
+  const game = session?.game ?? (screen === 'result' ? result?.game : null) ?? null;
+  const r = game ? rungNow : null;
+  setHidden('#best-row', r !== null);
+  setHidden('#rung-row', r === null);
+  setHidden('#goal-row', r === null);
+  if (r) {
+    setText('#rung', String(r.index));
+    setText('#goal', `${Math.min(game!.state.lines, r.goalLines)} / ${r.goalLines}`);
+  }
+  const modeId = game?.state.mode.id ?? menuMode;
   // The game in progress shows as Best as soon as it beats the record.
-  const best = Math.max(profile.best[modeId]?.score ?? 0, session?.game.state.score ?? 0);
+  const best = Math.max(profile.best[modeId]?.score ?? 0, game?.state.score ?? 0);
   setText('#best', String(best));
-  if (!session) {
+  if (!game) {
     renderNext(null);
     setText('#score', '0');
     setText('#lines', '0');
     setText('#level', '1');
     setText('#pause', 'Pause');
+    setText('#status', '');
     return;
   }
-  const s = session.game.state;
-  const phase = session.phase;
+  const s = game.state;
+  const phase = session?.phase ?? 'running';
   setText('#score', String(s.score));
   setText('#lines', String(s.lines));
   setText('#level', String(s.level));
@@ -268,19 +498,20 @@ function render(): void {
     return;
   }
   s.board.forEach((row, y) => row.forEach((c, x) => c && drawCell(ctx, cell, x, y, c)));
-  if (!s.over) {
+  const live = session !== null && !s.over;
+  if (live) {
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
       drawCell(ctx, cell, s.piece.x + cx, s.piece.y + cy, colorIndex(s.piece.kind));
     }
   }
-  renderNext(s.over ? null : s.next);
-  setText('#status', s.over ? 'Game over' : s.mode.name);
+  renderNext(live ? s.next : null);
+  if (!session) setText('#status', $('#result-title').textContent ?? '');
+  else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
 }
 
 function loop(now: number): void {
   session?.tick(now);
-  persistOnLock();
-  if (session?.game.state.over) endSession();
+  settle();
   render();
   requestAnimationFrame(loop);
 }
@@ -296,13 +527,17 @@ function act(action: Action): void {
     return;
   }
   session.act(action, performance.now());
-  persistOnLock();
+  settle();
 }
 
 document.addEventListener('keydown', (e) => {
   // Typing a name is not playing: its keys stay in the field.
   if (e.target === nameInput) return;
-  if (!session || session.game.state.over) return;
+  if (!session || session.game.state.over) {
+    // A key held through the end of a game must not repeat onto the result's buttons.
+    if (e.repeat) e.preventDefault();
+    return;
+  }
   const { action, preventDefault } = keyAction(
     e.key,
     session.phase,
@@ -320,6 +555,50 @@ document.querySelector('#restart')!.addEventListener('click', restart);
 document.querySelector('#quit')!.addEventListener('click', quit);
 resumeSavedBtn.addEventListener('click', resumeSaved);
 document.querySelector('#discard-saved')!.addEventListener('click', discardSaved);
+ladderBtn.addEventListener('click', openLadder);
+for (const btn of mainMenu.querySelectorAll<HTMLButtonElement>('button[data-mode]')) {
+  btn.addEventListener('click', () => playMode(btn.dataset.mode));
+}
+ladderBack.addEventListener('click', () => {
+  screen = 'menu';
+});
+ladderCurrent.addEventListener('click', () => {
+  ladderTopRow = ladderTop(highestRung(profile));
+  renderLadder();
+  scrollToCurrent();
+  rungList.querySelector<HTMLElement>('.current')?.focus({ preventScroll: true });
+});
+rungList.addEventListener('click', (e) => {
+  const btn = e.target instanceof Element ? e.target.closest('button') : null;
+  if (!btn || btn.disabled) return;
+  if (btn.dataset.rung) {
+    playRung(Number(btn.dataset.rung));
+    return;
+  }
+  const up = Number(btn.dataset.top) > ladderTopRow;
+  ladderTopRow = Number(btn.dataset.top);
+  renderLadder();
+  // Paging up lands next to the rungs just left, at the bottom; paging down at the top.
+  rungList.scrollTop = up ? rungList.scrollHeight : 0;
+  // Focus stays at the same end of the list as the scroll.
+  const pagers = rungList.querySelectorAll<HTMLElement>('.pager');
+  pagers[up ? pagers.length - 1 : 0]?.focus({ preventScroll: true });
+});
+/** A result button pressed too soon after the game ended: a hard drop tapped twice, say. */
+const tooSoon = (): boolean => performance.now() - resultAt < RESULT_GUARD_MS;
+resultNext.addEventListener('click', () => {
+  if (rungNow && !tooSoon()) playRung(rungNow.index + 1);
+});
+resultRetry.addEventListener('click', () => {
+  if (tooSoon()) return;
+  if (rungNow) playRung(rungNow.index);
+  else playMode(result?.game.state.mode.id);
+});
+resultBack.addEventListener('click', () => {
+  if (tooSoon()) return;
+  if (rungNow) openLadder();
+  else screen = 'menu';
+});
 
 // Board gestures follow the primary pointer only; extra fingers are ignored. A new
 // primary pointer means every earlier one has lifted, so it always starts afresh.
@@ -415,7 +694,6 @@ resizes.observe(nextCanvas);
 watchPixelRatio();
 fit();
 
-startBtn.addEventListener('click', start);
 // The cleaned name goes back into the field (value is text, never markup).
 nameInput.addEventListener('change', () => {
   profile = updateProfile(profileStorage, profile, (p) => rename(p, nameInput.value));
@@ -437,5 +715,6 @@ window.addEventListener('storage', (e) => {
   if (!fresh.stored) return;
   profile = fresh.profile;
   if (document.activeElement !== nameInput) nameInput.value = profile.name;
+  if (!session && screen === 'ladder') renderLadder();
 });
 requestAnimationFrame(loop);

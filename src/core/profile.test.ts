@@ -161,6 +161,14 @@ describe('records', () => {
     expect(p.totalLines).toBe(21);
   });
 
+  it('counts a ladder rung (mode null) toward totals, not toward any best', () => {
+    const p = recordGame(recordGame(newProfile(), 'classic', 500, 8), null, 9000, 12);
+    expect(p.best.classic).toEqual({ score: 500, lines: 8 });
+    expect(p.best.override).toEqual({ score: 0, lines: 0 });
+    expect(p.gamesPlayed).toBe(2);
+    expect(p.totalLines).toBe(20);
+  });
+
   it('ignores an unknown mode, including __proto__', () => {
     const p = newProfile();
     for (const mode of ['nope', '__proto__', 'constructor', 'toString']) {
