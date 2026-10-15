@@ -2,7 +2,11 @@ import { MAX_RUNGS } from './ladder.ts';
 import { MODES } from './modes/index.ts';
 import { MAX_COUNT } from './snapshot.ts';
 
-/** Bump when the stored format changes, and add the step from the old version to MIGRATIONS. */
+/**
+ * Bump when the stored format changes, and add the step from the old version to MIGRATIONS.
+ * Adding a mode counts: an older client drops bests of modes it doesn't know, and would
+ * erase them from the cloud save on its next upload; a bump makes it refuse the save instead.
+ */
 export const PROFILE_VERSION = 1;
 
 export const DEFAULT_NAME = 'Player';
@@ -154,6 +158,85 @@ export function parseProfile(
     totalLines: readCount(p.totalLines),
   };
   return { profile, newer };
+}
+
+/** A best-score key as the cloud save accepts it (supabase migrations, private.valid_profile). */
+const MODE_ID = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** Most modes a cloud profile may hold bests for. */
+const MAX_MODES = 16;
+
+/**
+ * A profile read back from the cloud save, or null when it is not exactly one this
+ * version writes. The same allow-list as stored data (parseProfile), but strict: any
+ * wrong key, type or value rejects the whole profile instead of being reset, so damaged
+ * or hostile server data never merges into the player's progress. Bests for modes this
+ * version doesn't know are checked, then dropped. The name is cleaned like a typed one.
+ */
+export function profileFromCloud(data: unknown): Profile | null {
+  if (
+    !isPlain(data) ||
+    !sameKeys(data, ['best', 'gamesPlayed', 'name', 'stars', 'totalLines', 'v'])
+  )
+    return null;
+  if (data.v !== PROFILE_VERSION) return null;
+  if (typeof data.name !== 'string' || data.name.length > MAX_RAW_NAME) return null;
+  if (typeof data.stars !== 'string' || readStars(data.stars) !== data.stars) return null;
+  if (!isCount(data.gamesPlayed) || !isCount(data.totalLines)) return null;
+  const best = data.best;
+  if (!isPlain(best) || Object.keys(best).length > MAX_MODES) return null;
+  for (const [id, b] of Object.entries(best)) {
+    if (!MODE_ID.test(id) || !isPlain(b) || !sameKeys(b, ['lines', 'score'])) return null;
+    if (!isCount(b.score) || !isCount(b.lines)) return null;
+  }
+  return {
+    name: cleanName(data.name),
+    best: bests(best),
+    stars: data.stars,
+    gamesPlayed: data.gamesPlayed,
+    totalLines: data.totalLines,
+  };
+}
+
+/**
+ * `a` and `b` combined so no progress from either is lost: totals, bests and each rung's
+ * stars take the larger value, and the longer stars string (the higher rung reached)
+ * wins. Order never matters: merge(a, b) equals merge(b, a). The name is a chosen one
+ * over DEFAULT_NAME, else the greater by code point, so both orders agree; sync code that
+ * knows which side renamed overrides it.
+ */
+export function mergeProfiles(a: Profile, b: Profile): Profile {
+  const best: Record<string, ModeBest> = {};
+  for (const id of Object.keys(MODES)) {
+    const x = a.best[id]!;
+    const y = b.best[id]!;
+    best[id] = { score: Math.max(x.score, y.score), lines: Math.max(x.lines, y.lines) };
+  }
+  const [long, short] = a.stars.length >= b.stars.length ? [a.stars, b.stars] : [b.stars, a.stars];
+  const stars = Array.from(long, (c, i) => (i < short.length && short[i]! > c ? short[i]! : c));
+  return {
+    name: pickName(a.name, b.name),
+    best,
+    stars: stars.join(''),
+    gamesPlayed: Math.max(a.gamesPlayed, b.gamesPlayed),
+    totalLines: Math.max(a.totalLines, b.totalLines),
+  };
+}
+
+function pickName(a: string, b: string): string {
+  if (a === DEFAULT_NAME) return b;
+  if (b === DEFAULT_NAME) return a;
+  return a > b ? a : b;
+}
+
+/** Whether `o` has exactly the keys `keys` (sorted). */
+function sameKeys(o: Record<string, unknown>, keys: string[]): boolean {
+  const own = Object.keys(o).sort();
+  return own.length === keys.length && own.every((k, i) => k === keys[i]);
+}
+
+function isCount(v: unknown): v is number {
+  return readCount(v) === v;
 }
 
 /** Run upgrade steps from the data's version up to the current one, while steps exist. */
