@@ -2,6 +2,8 @@ import { COLS, Game, ROWS } from './core/game.ts';
 import { MODES } from './core/modes/index.ts';
 import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { fitBoard } from './ui/fit.ts';
+import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
+import { actionForKey } from './ui/keys.ts';
 
 const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
 
@@ -131,6 +133,7 @@ function render(): void {
   setText('#lines', String(s.lines));
   setText('#level', String(s.level));
   setText('#status', s.over ? 'Game over' : paused ? 'Paused' : s.mode.name);
+  setText('#pause', paused ? 'Resume' : 'Pause');
 }
 
 function loop(now: number): void {
@@ -147,32 +150,124 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
-document.addEventListener('keydown', (e) => {
+const gestures = new GestureTracker();
+
+/** Apply one player action, whatever its source. */
+function act(action: Action): void {
   if (!game || game.state.over) return;
-  if (e.key === 'p' || e.key === 'P') paused = !paused;
+  if (action === 'pause') {
+    paused = !paused;
+    gestures.cancel();
+    return;
+  }
   if (paused) return;
-  switch (e.key) {
-    case 'ArrowLeft':
+  switch (action) {
+    case 'left':
       game.move(-1);
       break;
-    case 'ArrowRight':
+    case 'right':
       game.move(1);
       break;
-    case 'ArrowUp':
+    case 'rotate':
       game.rotate();
       break;
-    case 'ArrowDown':
+    case 'softDrop':
       if (game.step()) game.state.score += 1;
       lastDrop = performance.now();
       break;
-    case ' ':
+    case 'hardDrop':
       game.hardDrop();
       break;
-    default:
-      return;
   }
+}
+
+document.addEventListener('keydown', (e) => {
+  const action = actionForKey(e.key);
+  if (!game || game.state.over || !action) return;
+  act(action);
   e.preventDefault();
 });
+
+// Board gestures follow the primary pointer only; extra fingers are ignored. A new
+// primary pointer means every earlier one has lifted, so it always starts afresh.
+let touchId: number | null = null;
+well.addEventListener('pointerdown', (e) => {
+  // A mouse acts with its main button only, so right or middle clicks do nothing.
+  if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  touchId = e.pointerId;
+  gestures.down(e.clientX, e.clientY, e.timeStamp, cell / (window.devicePixelRatio || 1));
+  e.preventDefault();
+  try {
+    well.setPointerCapture(e.pointerId);
+  } catch {
+    // Pointer already gone; its up or cancel ends the gesture.
+  }
+});
+well.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== touchId) return;
+  for (const a of gestures.move(e.clientX, e.clientY, e.timeStamp)) act(a);
+});
+well.addEventListener('pointerup', (e) => {
+  if (e.pointerId !== touchId) return;
+  touchId = null;
+  for (const a of gestures.up(e.clientX, e.clientY, e.timeStamp)) act(a);
+});
+well.addEventListener('pointercancel', (e) => {
+  if (e.pointerId !== touchId) return;
+  touchId = null;
+  gestures.cancel();
+});
+well.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// On-screen buttons act on press, not release. preventDefault keeps focus off them,
+// so Space can't also click one; tabindex="-1" keeps them out of the Tab order.
+// A click with no pointer (detail 0) is assistive tech activating the button.
+// Move and soft drop repeat while held, like a held key. One repeat at a time: the
+// latest repeating press owns it, and only that pointer's release stops it, so
+// rotate or hard drop can be tapped mid-slide.
+const REPEAT_DELAY_MS = 170;
+const REPEAT_MS = 50;
+const REPEATS: ReadonlySet<Action> = new Set(['left', 'right', 'softDrop']);
+let repeatTimer: ReturnType<typeof setTimeout> | undefined;
+let repeatPointer: number | null = null;
+function stopRepeat(): void {
+  clearTimeout(repeatTimer);
+  repeatTimer = undefined;
+  repeatPointer = null;
+}
+function repeat(action: Action, delay: number): void {
+  repeatTimer = setTimeout(() => {
+    if (paused || !game || game.state.over) {
+      stopRepeat();
+      return;
+    }
+    act(action);
+    repeat(action, REPEAT_MS);
+  }, delay);
+}
+for (const btn of document.querySelectorAll<HTMLButtonElement>('button[data-action]')) {
+  const action = btn.dataset.action;
+  if (!isAction(action)) continue;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    act(action);
+    if (REPEATS.has(action)) {
+      stopRepeat();
+      repeatPointer = e.pointerId;
+      repeat(action, REPEAT_DELAY_MS);
+    }
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) {
+    btn.addEventListener(type, (e) => {
+      if (e.pointerId === repeatPointer) stopRepeat();
+    });
+  }
+  btn.addEventListener('click', (e) => {
+    if (e.detail === 0) act(action);
+  });
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+}
 
 // touch-action: none (page.css) stops pinch zoom elsewhere; Safari zooms through its own gesture events.
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {

@@ -39,7 +39,11 @@ src/
     game.ts       board, movement, locking, line clears
     pieces.ts     shapes, rotation, seeded 7-bag
     modes/        Mode interface + classic + override
-  main.ts         canvas render + keyboard input
+  ui/             pure UI helpers, no DOM (unit-tested)
+    fit.ts        board sizing to whole device pixels
+    gestures.ts   touch gesture recognition
+    keys.ts       keyboard map
+  main.ts         canvas render + keyboard, touch and button input
 tools/            version check + pre-push hook (CI and local)
 ```
 
@@ -47,4 +51,6 @@ To change a mode's rules, implement the `Mode` hooks in its file. If a rule need
 
 ## Controls
 
-← → move · ↑ rotate · ↓ soft drop · Space hard drop · P pause
+- Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P pause
+- Touch, on the board: tap rotate · drag sideways to move one column per cell · drag down to soft drop · flick down to hard drop
+- Touch buttons (touch screens only; ← → ↓ repeat while held): ← → ↓ ⤓ ↻ under the board in portrait, beside it in landscape; Pause sits next to Start
