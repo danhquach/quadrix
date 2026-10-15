@@ -15,6 +15,7 @@ import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
+import { GUIDE_ROWS, Guide, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
 import { keyAction } from './ui/keys.ts';
 import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
@@ -53,6 +54,8 @@ const cloudOffBtn = document.querySelector<HTMLButtonElement>('#cloud-off')!;
 const cloudBackBtn = document.querySelector<HTMLButtonElement>('#cloud-back')!;
 const linkInput = document.querySelector<HTMLInputElement>('#link-input')!;
 const linkSubmit = document.querySelector<HTMLButtonElement>('#link-submit')!;
+const guidePanel = document.querySelector<HTMLElement>('#guide')!;
+const guideToggle = document.querySelector<HTMLButtonElement>('#guide-toggle')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -216,6 +219,8 @@ function begin(game: Game, countdown: boolean): void {
   }
   persist();
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  guide.start();
+  renderGuide();
 }
 
 /** A free game in mode `id` (Classic if unknown). */
@@ -247,6 +252,8 @@ function resumeSaved(): void {
   savedLocks = session.game.locks;
   if (saved.locks > 0) playedGame.played();
   saved = null;
+  guide.start();
+  renderGuide();
 }
 
 function discardSaved(): void {
@@ -576,6 +583,14 @@ function act(action: Action): void {
 document.addEventListener('keydown', (e) => {
   // Typing a name or link code is not playing: its keys stay in the field.
   if (e.target === nameInput || e.target === linkInput) return;
+  guide.keyboardSeen();
+  // `?` shows or hides the guide at any time, without moving the piece or pausing.
+  if (isGuideKey(e.key, e.ctrlKey || e.metaKey || e.altKey)) {
+    e.preventDefault();
+    if (!e.repeat) toggleGuide();
+    return;
+  }
+  renderGuide();
   if (!session || session.game.state.over) {
     // A key held through the end of a game must not repeat onto the result's buttons.
     if (e.repeat) e.preventDefault();
@@ -730,6 +745,52 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('button[data-acti
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 }
+
+// Keyboard controls guide. Its rows are built as text nodes, never markup.
+const guide = new Guide(loadGuideClosed(storage), matchMedia('(any-pointer: fine)').matches);
+document.querySelector('#guide-keys')!.replaceChildren(
+  ...GUIDE_ROWS.map((row) => {
+    const div = document.createElement('div');
+    const dt = document.createElement('dt');
+    for (const { label } of row.keys) {
+      const kbd = document.createElement('kbd');
+      kbd.textContent = label;
+      dt.append(kbd);
+    }
+    const dd = document.createElement('dd');
+    dd.textContent = row.text;
+    div.append(dt, dd);
+    return div;
+  }),
+);
+
+function renderGuide(): void {
+  if (guidePanel.hidden === guide.visible) guidePanel.hidden = !guide.visible;
+  if (guideToggle.hidden === guide.linkVisible) guideToggle.hidden = !guide.linkVisible;
+  guideToggle.setAttribute('aria-expanded', String(guide.visible));
+}
+
+function toggleGuide(): void {
+  if (guide.toggle()) writeGuideClosed(storage);
+  renderGuide();
+}
+
+// Like the Pause button, the guide's buttons never take focus, so Space can't press them.
+for (const btn of [guideToggle, document.querySelector<HTMLButtonElement>('#guide-close')!]) {
+  btn.addEventListener('pointerdown', (e) => e.preventDefault());
+}
+guideToggle.addEventListener('click', toggleGuide);
+document.querySelector('#guide-close')!.addEventListener('click', () => {
+  guide.close();
+  writeGuideClosed(storage);
+  renderGuide();
+});
+// A mouse or trackpad connected later means a keyboard is likely too.
+matchMedia('(any-pointer: fine)').addEventListener('change', (e) => {
+  if (e.matches) guide.keyboardSeen();
+  renderGuide();
+});
+renderGuide();
 
 const resizes = new ResizeObserver(fit);
 resizes.observe(well);

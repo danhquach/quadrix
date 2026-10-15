@@ -88,10 +88,6 @@ p {
   line-height: 1.2;
   color: #999;
 }
-.help {
-  font-size: 0.85em;
-  color: #999;
-}
 /* The board takes all remaining space; main.ts sizes and centres the canvas in it.
    It is also the gesture area (src/ui/gestures.ts). */
 .well {
@@ -265,6 +261,60 @@ p {
   user-select: text;
   -webkit-user-select: text;
 }
+/* Keyboard controls guide: beside the board in landscape, under it in portrait. It takes
+   its own space, so it never covers the board. */
+.guide {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: #bbb;
+}
+.guide[hidden] {
+  display: none;
+}
+.guide-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.guide-title {
+  font-weight: bold;
+  color: #eee;
+}
+.guide-head button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  font-size: 1.1rem;
+}
+.guide-keys {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.guide-keys div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.guide-keys dd {
+  margin: 0;
+}
+.guide-keys kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 1px 4px;
+  font-family: inherit;
+  text-align: center;
+  color: #eee;
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+}
 .countdown {
   font-size: 4rem;
   font-variant-numeric: tabular-nums;
@@ -284,6 +334,13 @@ p {
   }
   .controls {
     flex-wrap: wrap;
+  }
+  .guide {
+    width: 11em;
+  }
+  .guide-keys {
+    flex-direction: column;
+    flex-wrap: nowrap;
   }
   .hud {
     flex-basis: auto;
@@ -354,11 +411,5 @@ p {
   }
   .pad [data-action='rotate'] {
     grid-column: span 2;
-  }
-}
-/* No keyboard on a touch screen: the key help only takes space. */
-@media (pointer: coarse) {
-  .help {
-    display: none;
   }
 }

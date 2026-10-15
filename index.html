@@ -24,6 +24,16 @@
         <p id="best-row" class="best">Best <span id="best">0</span></p>
         <div class="controls">
           <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
+          <button
+            id="guide-toggle"
+            type="button"
+            tabindex="-1"
+            aria-controls="guide"
+            aria-expanded="false"
+            hidden
+          >
+            Controls
+          </button>
         </div>
         <div class="hud">
           <p id="rung-row" hidden>Rung <span id="rung">1</span></p>
@@ -37,7 +47,6 @@
           </div>
         </div>
         <p id="status" aria-live="polite"></p>
-        <p class="help">← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause</p>
       </section>
       <div class="well">
         <canvas id="board" role="img" aria-label="Game board"></canvas>
@@ -115,6 +124,15 @@
           </div>
         </div>
       </div>
+      <aside id="guide" class="guide" aria-labelledby="guide-title" hidden>
+        <div class="guide-head">
+          <p id="guide-title" class="guide-title">Controls</p>
+          <button id="guide-close" type="button" tabindex="-1" aria-label="Close controls">
+            ×
+          </button>
+        </div>
+        <dl id="guide-keys" class="guide-keys"></dl>
+      </aside>
       <div class="pad" role="group" aria-label="Touch controls">
         <button type="button" tabindex="-1" data-action="left" aria-label="Move left">←</button>
         <button type="button" tabindex="-1" data-action="right" aria-label="Move right">→</button>
