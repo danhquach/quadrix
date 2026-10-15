@@ -61,6 +61,14 @@ describe('keyAction', () => {
     }
   });
 
+  it('leaves browser shortcuts alone (Cmd+P, Ctrl+Arrow, Alt+Space)', () => {
+    for (const key of ['p', 'P', 'Escape', 'ArrowLeft', ' ']) {
+      for (const phase of ['running', 'paused'] as const) {
+        expect(keyAction(key, phase, false, true)).toEqual({ action: null, preventDefault: false });
+      }
+    }
+  });
+
   it('leaves other keys alone', () => {
     expect(keyAction('Enter', 'paused', false)).toEqual({ action: null, preventDefault: false });
     expect(keyAction('__proto__', 'running', false)).toEqual({

@@ -161,6 +161,9 @@ function render(): void {
   renderOverlay();
   if (!session) {
     renderNext(null);
+    setText('#score', '0');
+    setText('#lines', '0');
+    setText('#level', '1');
     setText('#pause', 'Pause');
     return;
   }
@@ -207,7 +210,12 @@ function act(action: Action): void {
 
 document.addEventListener('keydown', (e) => {
   if (!session || session.game.state.over) return;
-  const { action, preventDefault } = keyAction(e.key, session.phase, e.repeat);
+  const { action, preventDefault } = keyAction(
+    e.key,
+    session.phase,
+    e.repeat,
+    e.ctrlKey || e.metaKey || e.altKey,
+  );
   if (action) act(action);
   if (preventDefault) e.preventDefault();
 });
