@@ -56,6 +56,25 @@ describe('game', () => {
     expect(g.state.over).toBe(true);
   });
 
+  it('a gravity step never locks: a resting piece stays put until lock()', () => {
+    const g = new Game(MODES.classic!, 1);
+    g.state.piece = { kind: 'O', rot: 0, x: 3, y: ROWS - 2 };
+    expect(g.grounded()).toBe(true);
+    expect(g.step()).toBe(false);
+    expect(g.locks).toBe(0);
+    expect(g.state.board[ROWS - 1]!.every((c) => c === 0)).toBe(true);
+    g.lock();
+    expect(g.locks).toBe(1);
+    expect(g.state.board[ROWS - 1]![4]).not.toBe(0);
+  });
+
+  it('grounded is false while the piece can still fall', () => {
+    const g = new Game(MODES.classic!, 1);
+    expect(g.grounded()).toBe(false);
+    g.state.piece = g.ghost();
+    expect(g.grounded()).toBe(true);
+  });
+
   describe('ghost', () => {
     /** A bumpy stack: column heights vary so the landing row depends on x. */
     function bumpy(g: Game): void {

@@ -111,12 +111,15 @@ export class Game {
     return false;
   }
 
-  /** One gravity step. Returns false when the piece locked instead of falling. */
+  /** One gravity step. Returns false when the piece rests on the stack; it never locks. */
   step(): boolean {
-    if (this.state.over) return false;
-    if (this.tryPlace({ ...this.state.piece, y: this.state.piece.y + 1 })) return true;
-    this.lock();
-    return false;
+    return this.tryPlace({ ...this.state.piece, y: this.state.piece.y + 1 });
+  }
+
+  /** Whether the piece rests on the floor or the stack (one row down would not fit). */
+  grounded(): boolean {
+    const p = this.state.piece;
+    return !this.fits({ ...p, y: p.y + 1 });
   }
 
   hardDrop(): void {
@@ -150,8 +153,10 @@ export class Game {
     return true;
   }
 
-  private lock(): void {
+  /** Fix the piece to the board where it is, clear lines and spawn the next. */
+  lock(): void {
     const s = this.state;
+    if (s.over) return;
     this.lockCount++;
     const color = colorIndex(s.piece.kind);
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
