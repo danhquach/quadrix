@@ -5,12 +5,14 @@ export default mergeConfig(
   viteConfig,
   defineConfig({
     test: {
-      // Unit tests cover the pure engine (src/core/**), the lint guards
-      // (src/lint.test.ts), the build's Content-Security-Policy
-      // (src/csp.test.ts) and the version checks (src/version-checks.test.ts).
+      // Unit tests cover the pure engine (src/core/**), the pure UI helpers
+      // (src/ui/**, no DOM), the lint guards (src/lint.test.ts), the build's
+      // Content-Security-Policy (src/csp.test.ts) and the version checks
+      // (src/version-checks.test.ts).
       // The DOM layer is kept thin and is not unit-tested here.
       include: [
         'src/core/**/*.test.ts',
+        'src/ui/**/*.test.ts',
         'src/lint.test.ts',
         'src/csp.test.ts',
         'src/version-checks.test.ts',
