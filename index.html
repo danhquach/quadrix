@@ -25,6 +25,7 @@
         <div class="controls">
           <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
           <button id="open-settings" type="button" tabindex="-1">Settings</button>
+          <button id="mute" type="button" tabindex="-1" aria-pressed="false">Mute</button>
           <button
             id="guide-toggle"
             type="button"
@@ -120,6 +121,14 @@
             <label class="setting">
               <span>Repeat interval <output id="set-interval-value"></output></span>
               <input id="set-interval" type="range" min="0" max="100" step="1" />
+            </label>
+            <label class="setting">
+              <span>Effects volume <output id="set-sfx-value"></output></span>
+              <input id="set-sfx" type="range" min="0" max="100" step="1" />
+            </label>
+            <label class="setting">
+              <span>Music volume <output id="set-music-value"></output></span>
+              <input id="set-music" type="range" min="0" max="100" step="1" />
             </label>
             <p class="settings-head">Keys</p>
             <div id="set-keys" class="set-keys"></div>

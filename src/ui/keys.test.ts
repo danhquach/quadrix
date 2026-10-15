@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_KEYS, actionForKey, isBindable, keyAction, keyLabel, normalKey } from './keys.ts';
+import {
+  DEFAULT_KEYS,
+  actionForKey,
+  isBindable,
+  isMuteKey,
+  keyAction,
+  keyLabel,
+  normalKey,
+} from './keys.ts';
 
 describe('actionForKey', () => {
   it('maps the control keys', () => {
@@ -119,6 +127,21 @@ describe('rebound keys', () => {
   });
 });
 
+describe('isMuteKey', () => {
+  it('is M in either case, without Ctrl, Cmd or Alt', () => {
+    expect(isMuteKey('m', false)).toBe(true);
+    expect(isMuteKey('M', false)).toBe(true);
+    expect(isMuteKey('m', true)).toBe(false);
+    for (const key of ['n', 'Meta', 'ArrowDown', 'Escape', 'ｍ', 'м', '__proto__', '']) {
+      expect(isMuteKey(key, false)).toBe(false);
+    }
+  });
+
+  it('is no action, whatever is bound', () => {
+    expect(actionForKey('m')).toBeNull();
+  });
+});
+
 describe('isBindable, normalKey and keyLabel', () => {
   it('allows arrows, Space, letters, digits and plain punctuation', () => {
     for (const key of ['ArrowLeft', 'ArrowDown', ' ', 'a', 'z', '0', '9', ',', '.', '/', ';']) {
@@ -130,6 +153,7 @@ describe('isBindable, normalKey and keyLabel', () => {
     for (const key of [
       'Escape',
       '?',
+      'm',
       'Tab',
       'Enter',
       'Shift',

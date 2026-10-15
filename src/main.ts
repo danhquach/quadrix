@@ -1,3 +1,4 @@
+import { SoundOut } from './ui/audio.ts';
 import { COLS, Game, ROWS } from './core/game.ts';
 import {
   MAX_RUNGS,
@@ -16,7 +17,7 @@ import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from 
 import { fitBoard } from './ui/fit.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
-import { keyAction, keyLabel } from './ui/keys.ts';
+import { isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
 import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
 import { PlayedGame } from './ui/played.ts';
@@ -29,6 +30,7 @@ import {
   DELAY_RANGE,
   INTERVAL_RANGE,
   SETTINGS_KEY,
+  VOLUME_RANGE,
   bindKey,
   inRange,
   loadSettings,
@@ -37,6 +39,7 @@ import {
   type Settings,
 } from './ui/settings.ts';
 import { MARKS, PIECE_VARS, blockColors, drawBlock } from './ui/skin.ts';
+import { cuesFor, musicOn, type GameView } from './ui/sound.ts';
 
 // Colors are defined once, as CSS variables in page.css; the canvases read them here.
 const theme = getComputedStyle(document.documentElement);
@@ -85,6 +88,9 @@ const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
 const ghostInput = document.querySelector<HTMLInputElement>('#set-ghost')!;
 const delayInput = document.querySelector<HTMLInputElement>('#set-delay')!;
 const intervalInput = document.querySelector<HTMLInputElement>('#set-interval')!;
+const sfxInput = document.querySelector<HTMLInputElement>('#set-sfx')!;
+const musicInput = document.querySelector<HTMLInputElement>('#set-music')!;
+const muteBtn = document.querySelector<HTMLButtonElement>('#mute')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -464,6 +470,8 @@ function pause(): void {
   session.pause();
   persist();
   stopInput();
+  // Now, not on the next frame: a hidden tab gets no frames, but its audio plays on.
+  sound.music(false);
 }
 
 function drawCell(
@@ -643,11 +651,40 @@ function showAward(): void {
   awardText.classList.add('show');
 }
 
+const sound = new SoundOut();
+/** The game as the last frame left it, for its sounds. */
+let heard: GameView | null = null;
+
+/** Play what this frame's moves, locks and clears sound like, and run the music with the game. */
+function playSounds(): void {
+  const game = session?.game;
+  const view: GameView | null = game
+    ? {
+        game,
+        locks: game.locks,
+        lines: game.state.lines,
+        level: game.state.level,
+        over: game.state.over,
+        x: game.state.piece.x,
+        rot: game.state.piece.rot,
+      }
+    : null;
+  if (view) for (const cue of cuesFor(heard, view)) sound.play(cue);
+  heard = view;
+  sound.music(musicOn(settings.muted, session?.phase ?? null, game?.state.over ?? true));
+}
+
+// Browsers allow sound only after the player's first click, tap or key press.
+for (const type of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click']) {
+  document.addEventListener(type, () => sound.unlock(), { capture: true });
+}
+
 function loop(now: number): void {
   session?.tick(now);
   const running = session?.phase === 'running' && !session.game.state.over;
   for (const move of keyRepeat.tick(now, running)) act(move);
   settle();
+  playSounds();
   render();
   requestAnimationFrame(loop);
 }
@@ -673,6 +710,12 @@ document.addEventListener('keydown', (e) => {
   // Typing a name or link code is not playing: its keys stay in the field.
   if (e.target === nameInput || e.target === linkInput) return;
   guide.keyboardSeen();
+  // M mutes or unmutes at any time, unless Settings is waiting for a key to bind.
+  if (!binding && isMuteKey(e.key, e.ctrlKey || e.metaKey || e.altKey)) {
+    e.preventDefault();
+    if (!e.repeat) toggleMute();
+    return;
+  }
   if (settingsOpen) {
     settingsKey(e);
     return;
@@ -1067,7 +1110,12 @@ function renderSettings(): void {
   ghostInput.checked = settings.ghost;
   delayInput.value = String(settings.delayMs);
   intervalInput.value = String(settings.intervalMs);
+  sfxInput.value = String(settings.sfxVolume);
+  musicInput.value = String(settings.musicVolume);
   setText('#set-delay-value', `${settings.delayMs} ms`);
+  setText('#set-sfx-value', `${settings.sfxVolume}%`);
+  setText('#set-music-value', `${settings.musicVolume}%`);
+  muteBtn.setAttribute('aria-pressed', String(settings.muted));
   setText(
     '#set-interval-value',
     settings.intervalMs === 0 ? '0 ms (instant)' : `${settings.intervalMs} ms`,
@@ -1081,10 +1129,11 @@ function renderSettings(): void {
   }
 }
 
-/** Use `next` from now on: the repeat timing, the guide and the panel follow it. */
+/** Use `next` from now on: the repeat timing, the sound, the guide and the panel follow it. */
 function applySettings(next: Settings): void {
   settings = next;
   keyRepeat.setTiming(repeatTiming(settings));
+  sound.setLevels(settings.muted, settings.sfxVolume, settings.musicVolume);
   renderSettings();
   renderGuideKeys();
 }
@@ -1092,6 +1141,10 @@ function applySettings(next: Settings): void {
 function changeSettings(next: Settings): void {
   applySettings(next);
   writeSettings(storage, settings);
+}
+
+function toggleMute(): void {
+  changeSettings({ ...settings, muted: !settings.muted });
 }
 
 /** Open Settings over whatever shows; a game in play pauses under it. */
@@ -1152,22 +1205,30 @@ function settingsKey(e: KeyboardEvent): void {
 ghostInput.addEventListener('change', () =>
   changeSettings({ ...settings, ghost: ghostInput.checked }),
 );
-/** The timing the sliders show, applied while dragging and stored once the drag ends. */
+/** The timing and volumes the sliders show, applied while dragging and stored once the drag ends. */
 function sliderSettings(): Settings {
   return {
     ...settings,
     delayMs: inRange(Number(delayInput.value), DELAY_RANGE) ?? settings.delayMs,
     intervalMs: inRange(Number(intervalInput.value), INTERVAL_RANGE) ?? settings.intervalMs,
+    sfxVolume: inRange(Number(sfxInput.value), VOLUME_RANGE) ?? settings.sfxVolume,
+    musicVolume: inRange(Number(musicInput.value), VOLUME_RANGE) ?? settings.musicVolume,
   };
 }
-for (const slider of [delayInput, intervalInput]) {
+for (const slider of [delayInput, intervalInput, sfxInput, musicInput]) {
   slider.addEventListener('input', () => applySettings(sliderSettings()));
   slider.addEventListener('change', () => changeSettings(sliderSettings()));
 }
+// A sample at the new effects volume.
+sfxInput.addEventListener('change', () => sound.play('lock'));
+// Like Pause, Mute never takes focus, so Space can't press it mid-game.
+muteBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+muteBtn.addEventListener('click', toggleMute);
 document.querySelector('#settings-reset')!.addEventListener('click', () => {
   binding = null;
   setText('#settings-note', 'Defaults restored.');
-  changeSettings(DEFAULT_SETTINGS);
+  // Mute is the HUD's and M's, not the panel's: Reset never makes a muted game loud.
+  changeSettings({ ...DEFAULT_SETTINGS, muted: settings.muted });
 });
 document.querySelector('#settings-back')!.addEventListener('click', closeSettings);
 document.querySelector('#pause-settings')!.addEventListener('click', openSettings);
@@ -1183,7 +1244,7 @@ window.addEventListener('storage', (e) => {
   binding = null;
   applySettings(loadSettings(storage));
 });
-renderSettings();
+applySettings(settings);
 
 // Sync when the game leaves the screen (progress made here) and comes back (progress
 // made on other devices meanwhile), and when the connection returns.
