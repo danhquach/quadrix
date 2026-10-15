@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quadrix</title>
+    <link rel="stylesheet" href="/src/page.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Quadrix</h1>
+      <div class="controls">
+        <label>
+          Mode
+          <select id="mode">
+            <option value="classic">Classic</option>
+            <option value="override">Override</option>
+          </select>
+        </label>
+        <button id="start" type="button">Start</button>
+      </div>
+      <div class="play">
+        <canvas id="board" width="300" height="600"></canvas>
+        <aside>
+          <p>Score <span id="score">0</span></p>
+          <p>Lines <span id="lines">0</span></p>
+          <p>Level <span id="level">1</span></p>
+          <p id="status"></p>
+          <p class="help">← → move · ↑ rotate · ↓ soft drop · Space hard drop · P pause</p>
+        </aside>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
