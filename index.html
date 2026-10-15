@@ -31,10 +31,19 @@
           </div>
         </div>
         <p id="status" aria-live="polite"></p>
-        <p class="help">← → move · ↑ rotate · ↓ soft drop · Space hard drop · P pause</p>
+        <p class="help">← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause</p>
       </section>
       <div class="well">
         <canvas id="board" role="img" aria-label="Game board"></canvas>
+        <div id="overlay" class="overlay" hidden>
+          <p id="countdown" class="countdown"></p>
+          <div id="pause-menu" class="pause-menu" role="group" aria-label="Paused">
+            <p class="pause-title">Paused</p>
+            <button id="resume" type="button">Resume</button>
+            <button id="restart" type="button">Restart</button>
+            <button id="quit" type="button">Quit</button>
+          </div>
+        </div>
       </div>
       <div class="pad" role="group" aria-label="Touch controls">
         <button type="button" tabindex="-1" data-action="left" aria-label="Move left">←</button>

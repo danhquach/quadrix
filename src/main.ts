@@ -1,9 +1,11 @@
 import { COLS, Game, ROWS } from './core/game.ts';
 import { MODES } from './core/modes/index.ts';
+import { Session } from './core/session.ts';
 import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
-import { actionForKey } from './ui/keys.ts';
+import { keyAction } from './ui/keys.ts';
+import { onLeaveScreen } from './ui/lifecycle.ts';
 
 const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
 
@@ -14,6 +16,9 @@ const nextCanvas = document.querySelector<HTMLCanvasElement>('#next')!;
 const nextCtx = nextCanvas.getContext('2d')!;
 const modeSelect = document.querySelector<HTMLSelectElement>('#mode')!;
 const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
+const overlay = document.querySelector<HTMLElement>('#overlay')!;
+const pauseMenu = document.querySelector<HTMLElement>('#pause-menu')!;
+const resumeBtn = document.querySelector<HTMLButtonElement>('#resume')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -22,9 +27,7 @@ function setText(id: string, text: string): void {
   if (el.textContent !== text) el.textContent = text;
 }
 
-let game: Game | null = null;
-let paused = false;
-let lastDrop = 0;
+let session: Session | null = null;
 /** Board cell edge in canvas (device) pixels; set by fit(). */
 let cell = 1;
 
@@ -74,11 +77,34 @@ function watchPixelRatio(): void {
 
 function start(): void {
   const mode = MODES[modeSelect.value] ?? MODES.classic!;
-  game = new Game(mode);
-  paused = false;
-  lastDrop = performance.now();
+  session = new Session(new Game(mode), performance.now());
   setText('#status', mode.name);
   startBtn.blur();
+}
+
+/** A new game from the pause menu: it gets the 3-2-1 countdown, like Resume. */
+function restart(): void {
+  start();
+  session!.pause();
+  session!.resume(performance.now());
+}
+
+/** Back to the title state: no game. */
+function quit(): void {
+  session = null;
+  stopRepeat();
+  gestures.cancel();
+  setText('#status', '');
+  startBtn.focus();
+}
+
+/** Pause and drop any gesture or held button in progress. */
+function pause(): void {
+  if (!session) return;
+  session.pause();
+  stopRepeat();
+  gestures.cancel();
+  touchId = null;
 }
 
 function drawCell(
@@ -114,14 +140,45 @@ function renderNext(kind: Kind | null): void {
   for (const [x, y] of cells) drawCell(nextCtx, size, x, y, colorIndex(kind), ox, oy);
 }
 
+/** Show the pause menu or the countdown over the board, or neither. */
+function renderOverlay(): void {
+  const phase = session?.phase ?? 'running';
+  if (overlay.hidden !== (phase === 'running')) overlay.hidden = phase === 'running';
+  const menu = phase === 'paused';
+  if (pauseMenu.hidden === menu) {
+    pauseMenu.hidden = !menu;
+    // Hand keyboard focus to Resume, and take it back when the menu goes.
+    if (menu) resumeBtn.focus();
+    else if (pauseMenu.contains(document.activeElement))
+      (document.activeElement as HTMLElement).blur();
+  }
+  setText('#countdown', phase === 'countdown' ? String(session!.countdown(performance.now())) : '');
+}
+
 function render(): void {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (!game) {
+  renderOverlay();
+  if (!session) {
     renderNext(null);
+    setText('#score', '0');
+    setText('#lines', '0');
+    setText('#level', '1');
+    setText('#pause', 'Pause');
     return;
   }
-  const s = game.state;
+  const s = session.game.state;
+  const phase = session.phase;
+  setText('#score', String(s.score));
+  setText('#lines', String(s.lines));
+  setText('#level', String(s.level));
+  setText('#pause', phase === 'paused' ? 'Resume' : 'Pause');
+  // No planning while paused: the board and next piece stay hidden until play resumes.
+  if (phase !== 'running') {
+    renderNext(null);
+    setText('#status', phase === 'paused' ? 'Paused' : 'Get ready');
+    return;
+  }
   s.board.forEach((row, y) => row.forEach((c, x) => c && drawCell(ctx, cell, x, y, c)));
   if (!s.over) {
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
@@ -129,23 +186,11 @@ function render(): void {
     }
   }
   renderNext(s.over ? null : s.next);
-  setText('#score', String(s.score));
-  setText('#lines', String(s.lines));
-  setText('#level', String(s.level));
-  setText('#status', s.over ? 'Game over' : paused ? 'Paused' : s.mode.name);
-  setText('#pause', paused ? 'Resume' : 'Pause');
+  setText('#status', s.over ? 'Game over' : s.mode.name);
 }
 
 function loop(now: number): void {
-  if (
-    game &&
-    !paused &&
-    !game.state.over &&
-    now - lastDrop >= game.state.mode.gravityMs(game.state.level)
-  ) {
-    game.step();
-    lastDrop = now;
-  }
+  session?.tick(now);
   render();
   requestAnimationFrame(loop);
 }
@@ -154,46 +199,41 @@ const gestures = new GestureTracker();
 
 /** Apply one player action, whatever its source. */
 function act(action: Action): void {
-  if (!game || game.state.over) return;
+  if (!session || session.game.state.over) return;
   if (action === 'pause') {
-    paused = !paused;
-    gestures.cancel();
+    if (session.phase === 'paused') session.resume(performance.now());
+    else pause();
     return;
   }
-  if (paused) return;
-  switch (action) {
-    case 'left':
-      game.move(-1);
-      break;
-    case 'right':
-      game.move(1);
-      break;
-    case 'rotate':
-      game.rotate();
-      break;
-    case 'softDrop':
-      if (game.step()) game.state.score += 1;
-      lastDrop = performance.now();
-      break;
-    case 'hardDrop':
-      game.hardDrop();
-      break;
-  }
+  session.act(action, performance.now());
 }
 
 document.addEventListener('keydown', (e) => {
-  const action = actionForKey(e.key);
-  if (!game || game.state.over || !action) return;
-  act(action);
-  e.preventDefault();
+  if (!session || session.game.state.over) return;
+  const { action, preventDefault } = keyAction(
+    e.key,
+    session.phase,
+    e.repeat,
+    e.ctrlKey || e.metaKey || e.altKey,
+  );
+  if (action) act(action);
+  if (preventDefault) e.preventDefault();
 });
+
+onLeaveScreen(document, window, pause);
+
+resumeBtn.addEventListener('click', () => session?.resume(performance.now()));
+document.querySelector('#restart')!.addEventListener('click', restart);
+document.querySelector('#quit')!.addEventListener('click', quit);
 
 // Board gestures follow the primary pointer only; extra fingers are ignored. A new
 // primary pointer means every earlier one has lifted, so it always starts afresh.
 let touchId: number | null = null;
 well.addEventListener('pointerdown', (e) => {
   // A mouse acts with its main button only, so right or middle clicks do nothing.
+  // While paused the overlay's buttons take the touch instead.
   if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  if (session?.phase !== 'running') return;
   touchId = e.pointerId;
   gestures.down(e.clientX, e.clientY, e.timeStamp, cell / (window.devicePixelRatio || 1));
   e.preventDefault();
@@ -237,7 +277,7 @@ function stopRepeat(): void {
 }
 function repeat(action: Action, delay: number): void {
   repeatTimer = setTimeout(() => {
-    if (paused || !game || game.state.over) {
+    if (!session || session.phase !== 'running' || session.game.state.over) {
       stopRepeat();
       return;
     }

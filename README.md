@@ -38,11 +38,13 @@ src/
   core/           pure engine, no DOM (unit-tested)
     game.ts       board, movement, locking, line clears
     pieces.ts     shapes, rotation, seeded 7-bag
+    session.ts    gravity clock, pause and resume countdown
     modes/        Mode interface + classic + override
   ui/             pure UI helpers, no DOM (unit-tested)
     fit.ts        board sizing to whole device pixels
     gestures.ts   touch gesture recognition
     keys.ts       keyboard map
+    lifecycle.ts  auto-pause when the game leaves the screen
   main.ts         canvas render + keyboard, touch and button input
 tools/            version check + pre-push hook (CI and local)
 ```
@@ -51,6 +53,7 @@ To change a mode's rules, implement the `Mode` hooks in its file. If a rule need
 
 ## Controls
 
-- Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P pause
+- Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause
 - Touch, on the board: tap rotate · drag sideways to move one column per cell · drag down to soft drop · flick down to hard drop
 - Touch buttons (touch screens only; ← → ↓ repeat while held): ← → ↓ ⤓ ↻ under the board in portrait, beside it in landscape; Pause sits next to Start
+- Pause: the menu covers the board (Resume, Restart, Quit); Resume and Restart count down 3-2-1 before pieces fall. The game also pauses itself when the tab or app goes to the background, the device locks or the window loses focus.
