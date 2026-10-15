@@ -1,4 +1,4 @@
-import { cellsOf, colorIndex, makeBag, makeRng, type Kind } from './pieces.ts';
+import { PieceBag, cellsOf, colorIndex, type BagState, type Kind } from './pieces.ts';
 import type { Mode } from './modes/index.ts';
 
 export const COLS = 10;
@@ -22,23 +22,69 @@ export interface GameState {
   over: boolean;
 }
 
+/** Everything needed to continue a game exactly, bar its mode (see snapshot.ts). */
+export interface SavedGame {
+  board: number[][];
+  piece: Piece;
+  next: Kind;
+  score: number;
+  lines: number;
+  level: number;
+  bag: BagState;
+}
+
 /** Pure engine: every action takes a state and mutates only that state. No DOM, no timers. */
 export class Game {
   readonly state: GameState;
-  private readonly draw: () => Kind;
+  private readonly bag: PieceBag;
+  private lockCount = 0;
 
-  constructor(mode: Mode, seed = Date.now()) {
-    this.draw = makeBag(makeRng(seed));
-    const first = this.draw();
+  /** A new game from `seed`, or one continued from a save (trusted: validate it first). */
+  constructor(mode: Mode, from: number | SavedGame = Date.now()) {
+    if (typeof from !== 'number') {
+      this.bag = new PieceBag(from.bag);
+      this.state = {
+        mode,
+        board: from.board.map((row) => [...row]),
+        piece: { ...from.piece },
+        next: from.next,
+        score: from.score,
+        lines: from.lines,
+        level: from.level,
+        over: false,
+      };
+      return;
+    }
+    this.bag = new PieceBag(from);
+    const first = this.bag.next();
     this.state = {
       mode,
       board: Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
       piece: spawn(first),
-      next: this.draw(),
+      next: this.bag.next(),
       score: 0,
       lines: 0,
       level: 1,
       over: false,
+    };
+  }
+
+  /** Pieces locked since this object was made; lets the UI save after each lock. */
+  get locks(): number {
+    return this.lockCount;
+  }
+
+  /** A copy of the state to continue this game later. Meaningless once the game is over. */
+  save(): SavedGame {
+    const s = this.state;
+    return {
+      board: s.board.map((row) => [...row]),
+      piece: { ...s.piece },
+      next: s.next,
+      score: s.score,
+      lines: s.lines,
+      level: s.level,
+      bag: this.bag.save(),
     };
   }
 
@@ -87,6 +133,7 @@ export class Game {
 
   private lock(): void {
     const s = this.state;
+    this.lockCount++;
     const color = colorIndex(s.piece.kind);
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
       const y = s.piece.y + cy;
@@ -103,7 +150,7 @@ export class Game {
       s.level = s.mode.levelForLines(s.lines);
     }
     s.piece = spawn(s.next);
-    s.next = this.draw();
+    s.next = this.bag.next();
     if (!this.fits(s.piece)) s.over = true;
   }
 

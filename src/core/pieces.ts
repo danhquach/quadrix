@@ -32,29 +32,52 @@ export function colorIndex(kind: Kind): number {
   return KINDS.indexOf(kind) + 1;
 }
 
-/** Deterministic PRNG (mulberry32) so games and tests are reproducible from a seed. */
-export function makeRng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
+/** A 7-bag's full state: the PRNG's internal word and the kinds left in the bag. */
+export interface BagState {
+  rng: number;
+  bag: Kind[];
+}
+
+/**
+ * 7-bag randomizer: every kind appears once per 7 pieces. Seeded (mulberry32 PRNG) so
+ * games and tests are reproducible, and its state can be saved and restored exactly.
+ */
+export class PieceBag {
+  private a: number;
+  private bag: Kind[];
+
+  /** A fresh bag from `seed`, or one continued from a saved state. */
+  constructor(from: number | BagState) {
+    if (typeof from === 'number') {
+      this.a = from >>> 0;
+      this.bag = [];
+    } else {
+      this.a = from.rng >>> 0;
+      this.bag = [...from.bag];
+    }
+  }
+
+  next(): Kind {
+    if (this.bag.length === 0) {
+      this.bag = [...KINDS];
+      for (let i = this.bag.length - 1; i > 0; i--) {
+        const j = Math.floor(this.random() * (i + 1));
+        [this.bag[i], this.bag[j]] = [this.bag[j]!, this.bag[i]!];
+      }
+    }
+    return this.bag.pop()!;
+  }
+
+  save(): BagState {
+    return { rng: this.a, bag: [...this.bag] };
+  }
+
+  /** mulberry32: a float in [0, 1). */
+  private random(): number {
+    this.a = (this.a + 0x6d2b79f5) >>> 0;
+    let t = this.a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** 7-bag randomizer: every kind appears once per 7 pieces. */
-export function makeBag(rng: () => number): () => Kind {
-  let bag: Kind[] = [];
-  return () => {
-    if (bag.length === 0) {
-      bag = [...KINDS];
-      for (let i = bag.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        [bag[i], bag[j]] = [bag[j]!, bag[i]!];
-      }
-    }
-    return bag.pop()!;
-  };
+  }
 }
