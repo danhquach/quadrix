@@ -147,7 +147,8 @@ export class Game {
     if (cleared > 0) {
       s.score += s.mode.scoreForLines(cleared, s.level);
       s.lines += cleared;
-      s.level = s.mode.levelForLines(s.lines);
+      // Never below the level the game started on (a ladder rung can start above 1).
+      s.level = Math.max(s.level, s.mode.levelForLines(s.lines));
     }
     s.piece = spawn(s.next);
     s.next = this.bag.next();
@@ -163,6 +164,7 @@ export class Game {
   }
 }
 
-function spawn(kind: Kind): Piece {
+/** A new piece of `kind` at the spawn position. */
+export function spawn(kind: Kind): Piece {
   return { kind, rot: 0, x: 3, y: 0 };
 }
