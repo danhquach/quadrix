@@ -12,6 +12,7 @@ import { MODES } from './core/modes/index.ts';
 import { Session } from './core/session.ts';
 import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
+import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { keyAction } from './ui/keys.ts';
@@ -44,6 +45,14 @@ const resultPanel = document.querySelector<HTMLElement>('#result')!;
 const resultNext = document.querySelector<HTMLButtonElement>('#result-next')!;
 const resultRetry = document.querySelector<HTMLButtonElement>('#result-retry')!;
 const resultBack = document.querySelector<HTMLButtonElement>('#result-back')!;
+const openCloudBtn = document.querySelector<HTMLButtonElement>('#open-cloud')!;
+const cloudPanel = document.querySelector<HTMLElement>('#cloud')!;
+const cloudOnBtn = document.querySelector<HTMLButtonElement>('#cloud-on')!;
+const cloudLinkBtn = document.querySelector<HTMLButtonElement>('#cloud-link')!;
+const cloudOffBtn = document.querySelector<HTMLButtonElement>('#cloud-off')!;
+const cloudBackBtn = document.querySelector<HTMLButtonElement>('#cloud-back')!;
+const linkInput = document.querySelector<HTMLInputElement>('#link-input')!;
+const linkSubmit = document.querySelector<HTMLButtonElement>('#link-submit')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -62,7 +71,7 @@ let resultAt = 0;
 /** Taps and keys this soon after a game ends are the game's, not the result's buttons. */
 const RESULT_GUARD_MS = 400;
 /** What shows over the board when no game is in play. */
-let screen: 'menu' | 'ladder' | 'result' = 'menu';
+let screen: 'menu' | 'ladder' | 'result' | 'cloud' = 'menu';
 /** The free mode last chosen, whose Best shows in the menus. */
 let menuMode = 'classic';
 /** The top row's rung on the ladder screen. */
@@ -84,6 +93,37 @@ writeProfile(profileStorage, profile);
 nameInput.value = profile.name;
 const playedGame = new PlayedGame();
 
+/** Show a profile changed elsewhere (another tab, a cloud merge): name and ladder. */
+function showProfile(): void {
+  if (document.activeElement !== nameInput) nameInput.value = profile.name;
+  if (!session && screen === 'ladder') renderLadder();
+}
+
+/**
+ * Cloud save, when the build has a project and the profile is stored here (tokens and
+ * merges need storage). Syncs never block play: failures show in the status and retry.
+ */
+const config = cloudConfig(import.meta.env);
+const cloud =
+  config && loaded.stored
+    ? new CloudSync(config, {
+        storage,
+        fetch: (input, init) => window.fetch(input, init),
+        profile: () => {
+          const fresh = loadProfile(storage);
+          return fresh.stored ? fresh.profile : null;
+        },
+        update: (change) => {
+          profile = updateProfile(profileStorage, profile, change);
+          showProfile();
+        },
+        now: () => Date.now(),
+        locks: navigator.locks ?? null,
+        onStatus: () => renderCloud(),
+      })
+    : null;
+openCloudBtn.hidden = !cloud;
+
 /** An unfinished game from before a reload, offered until the player resumes or discards it. */
 let saved: Game | null = loadSave(storage, highestRung(profile));
 
@@ -92,6 +132,8 @@ function recordPlayed(game: Game): void {
   const { mode, score, lines } = game.state;
   const id = game.rung === null ? mode.id : null;
   profile = updateProfile(profileStorage, profile, (p) => recordGame(p, id, score, lines));
+  // A passed rung is recorded just before this, so one sync carries both.
+  void cloud?.sync();
 }
 
 /** Record the session's game, once, when it ends: game over, Quit, Restart or a new Start. */
@@ -444,6 +486,7 @@ function renderOverlay(): void {
     rungList.querySelector<HTMLElement>('.current') ?? ladderBack,
   );
   showMenu(resultPanel, idle && screen === 'result', resultNext.hidden ? resultRetry : resultNext);
+  showMenu(cloudPanel, idle && screen === 'cloud', cloudOnBtn.hidden ? cloudLinkBtn : cloudOnBtn);
   setText('#countdown', phase === 'countdown' ? String(session!.countdown(performance.now())) : '');
   const r = session && phase !== 'running' ? rungNow : null;
   setText(
@@ -531,8 +574,8 @@ function act(action: Action): void {
 }
 
 document.addEventListener('keydown', (e) => {
-  // Typing a name is not playing: its keys stay in the field.
-  if (e.target === nameInput) return;
+  // Typing a name or link code is not playing: its keys stay in the field.
+  if (e.target === nameInput || e.target === linkInput) return;
   if (!session || session.game.state.over) {
     // A key held through the end of a game must not repeat onto the result's buttons.
     if (e.repeat) e.preventDefault();
@@ -698,6 +741,7 @@ fit();
 nameInput.addEventListener('change', () => {
   profile = updateProfile(profileStorage, profile, (p) => rename(p, nameInput.value));
   nameInput.value = profile.name;
+  void cloud?.sync();
 });
 nameInput.addEventListener('keydown', (e) => {
   // Escape cancels the edit; Enter commits it (blur fires change).
@@ -708,13 +752,123 @@ nameInput.addEventListener('keydown', (e) => {
 nameInput.addEventListener('focus', () => {
   if (session?.phase === 'running' && !session.game.state.over) pause();
 });
-// Another tab changed the profile: show its records and name.
+// Another tab changed the profile: show its records and name. Or it turned cloud save on or off.
 window.addEventListener('storage', (e) => {
+  if (e.key === CLOUD_KEY && cloud) {
+    cloud.reload();
+    renderCloud();
+  }
   if (e.key !== PROFILE_KEY || !loaded.stored) return;
   const fresh = loadProfile(storage);
   if (!fresh.stored) return;
   profile = fresh.profile;
-  if (document.activeElement !== nameInput) nameInput.value = profile.name;
-  if (!session && screen === 'ladder') renderLadder();
+  showProfile();
 });
+
+// Cloud save panel. The link code is shown as text only, and never leaves the panel.
+const CLOUD_STATUS: Record<CloudStatus, string> = {
+  off: 'Off on this device',
+  syncing: 'Syncing…',
+  synced: 'Synced',
+  offline: 'Offline · will retry',
+  error: 'Sync error · tries again after your next game',
+  'signed-out': 'Signed out · turn on again, or enter a link code to rejoin your save',
+};
+/** An action in flight: its buttons wait. */
+let cloudBusy = false;
+let codeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function renderCloud(): void {
+  if (!cloud) return;
+  const on = cloud.on;
+  setText('#cloud-status', CLOUD_STATUS[cloud.status]);
+  cloudOnBtn.hidden = on;
+  cloudLinkBtn.hidden = !on;
+  cloudOffBtn.hidden = !on;
+  for (const btn of [cloudOnBtn, cloudLinkBtn, cloudOffBtn, linkSubmit]) btn.disabled = cloudBusy;
+  if (!on) showCode('');
+}
+
+/** Show a link code (formatted), or clear it with ''. */
+function showCode(code: string): void {
+  clearTimeout(codeTimer);
+  setText('#link-code', code ? formatCode(code) : '');
+}
+
+/** Run a panel action once at a time, then show its message. */
+async function cloudAction(action: (c: CloudSync) => Promise<string>): Promise<void> {
+  if (!cloud || cloudBusy) return;
+  cloudBusy = true;
+  setText('#cloud-note', '');
+  renderCloud();
+  try {
+    setText('#cloud-note', await action(cloud));
+  } finally {
+    cloudBusy = false;
+    renderCloud();
+  }
+}
+
+const OFFLINE_NOTE = "Can't reach cloud save. Try again.";
+const ERROR_NOTE = 'Cloud save is unavailable. Try again later.';
+
+openCloudBtn.addEventListener('click', () => {
+  screen = 'cloud';
+  setText('#cloud-note', '');
+  renderCloud();
+});
+cloudBackBtn.addEventListener('click', () => {
+  showCode('');
+  linkInput.value = '';
+  screen = 'menu';
+});
+cloudOnBtn.addEventListener('click', () =>
+  cloudAction(async (c) => {
+    const r = await c.enable();
+    return r === 'on' ? '' : r === 'offline' ? OFFLINE_NOTE : ERROR_NOTE;
+  }),
+);
+cloudLinkBtn.addEventListener('click', () =>
+  cloudAction(async (c) => {
+    const r = await c.createCode();
+    if ('error' in r) return r.error === 'offline' ? OFFLINE_NOTE : ERROR_NOTE;
+    showCode(r.code);
+    codeTimer = setTimeout(() => {
+      setText('#link-code', '');
+      setText('#cloud-note', 'The code expired.');
+    }, r.expiresAt - Date.now());
+    return 'Enter this code on the other device within 10 minutes.';
+  }),
+);
+const LINK_NOTES = {
+  linked: 'Linked. Progress from both devices is kept.',
+  invalid: 'Wrong or expired code.',
+  rate_limited: 'Too many tries. Wait 10 minutes.',
+  offline: OFFLINE_NOTE,
+  error: "Couldn't link. Try again.",
+} as const;
+function submitLink(): void {
+  void cloudAction(async (c) => {
+    const r = await c.redeem(linkInput.value);
+    if (r === 'linked') linkInput.value = '';
+    return LINK_NOTES[r];
+  });
+}
+linkSubmit.addEventListener('click', submitLink);
+linkInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitLink();
+});
+cloudOffBtn.addEventListener('click', () =>
+  cloudAction(async (c) => {
+    await c.disable();
+    return 'Off here. Your progress stays on this device. To rejoin this save, enter a link code from another device.';
+  }),
+);
+
+// Sync when the game leaves the screen (progress made here) and comes back (progress
+// made on other devices meanwhile), and when the connection returns.
+document.addEventListener('visibilitychange', () => void cloud?.sync());
+window.addEventListener('online', () => void cloud?.sync());
+void cloud?.sync();
+renderCloud();
 requestAnimationFrame(loop);

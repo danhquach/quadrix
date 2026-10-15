@@ -1,6 +1,6 @@
 # Cloud save backend
 
-One Supabase project (free tier) keeps each player's profile so it can follow them to another device. Players have no account: each browser signs in as an anonymous Supabase user. The game client (sync, link UI) is a separate ticket; this folder is the database side only.
+One Supabase project (free tier) keeps each player's profile so it can follow them to another device. Players have no account: each browser signs in as an anonymous Supabase user. This folder is the database side; the game's client is `src/ui/cloud.ts` (Cloud save on the main menu).
 
 ## What is here
 
@@ -63,4 +63,9 @@ With neither variable set, the build ships without cloud save and its Content-Se
 
 ## Changing the profile format
 
-The server checks the client's profile format (`private.valid_profile`). A new profile field or version needs a new migration that replaces that function, merged before the client that writes the new format.
+The server checks the client's profile format (`private.valid_profile`). A new profile field or version needs a new migration that replaces that function, merged before the client that writes the new format. A new mode also needs a `PROFILE_VERSION` bump: an older client keeps only the bests of modes it knows, so without the bump its next upload would erase the new mode's bests; with it, the older client refuses the newer save instead.
+
+## Client behaviour
+
+- A device that turns cloud save off and on again starts a new save; rejoining the old one takes a link code from a device still on it.
+- If the server refuses a device's session (revoked, or the anonymous user deleted), cloud save turns off on that device with the status "Signed out"; its local profile stays, and a link code brings it back to the save.

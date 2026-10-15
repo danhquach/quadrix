@@ -8,14 +8,17 @@ import {
   PROFILE_VERSION,
   cleanName,
   highestRung,
+  mergeProfiles,
   newProfile,
   parseProfile,
+  profileFromCloud,
   recordGame,
   recordRung,
   rename,
   toProfileText,
   type Profile,
 } from './profile.ts';
+import { mulberry32 } from './pieces.ts';
 import { MAX_COUNT } from './snapshot.ts';
 
 /** The profile parsed from `text`. */
@@ -353,5 +356,164 @@ describe('stored profile', () => {
       expect(parseProfile(stored(filled(), { v })).newer).toBe(false);
     }
     expect(parseProfile(null).newer).toBe(false);
+  });
+});
+
+/** Seeded random profiles, some sharing values so ties are covered. */
+function randomProfiles(seed: number, n: number): Profile[] {
+  let state = seed;
+  const roll = (max: number): number => {
+    const [v, next] = mulberry32(state);
+    state = next;
+    return Math.floor(v * max);
+  };
+  const out: Profile[] = [];
+  for (let i = 0; i < n; i++) {
+    const stars = Array.from({ length: roll(12) }, () => String(1 + roll(3))).join('');
+    out.push({
+      name: ['Player', 'Ada', 'Bo', 'Ada'][roll(4)]!,
+      best: {
+        classic: { score: roll(5) * 100, lines: roll(5) },
+        override: { score: roll(5) * 100, lines: roll(5) },
+      },
+      stars,
+      gamesPlayed: roll(6),
+      totalLines: roll(6) * 10,
+    });
+  }
+  return out;
+}
+
+describe('merge', () => {
+  const profiles = randomProfiles(7, 40);
+
+  it('is commutative', () => {
+    for (const a of profiles)
+      for (const b of profiles) {
+        expect(mergeProfiles(a, b)).toEqual(mergeProfiles(b, a));
+      }
+  });
+
+  it('never lowers any value of either side', () => {
+    for (const a of profiles)
+      for (const b of profiles) {
+        const m = mergeProfiles(a, b);
+        for (const side of [a, b]) {
+          expect(m.gamesPlayed).toBeGreaterThanOrEqual(side.gamesPlayed);
+          expect(m.totalLines).toBeGreaterThanOrEqual(side.totalLines);
+          expect(highestRung(m)).toBeGreaterThanOrEqual(highestRung(side));
+          for (const id of Object.keys(MODES)) {
+            expect(m.best[id]!.score).toBeGreaterThanOrEqual(side.best[id]!.score);
+            expect(m.best[id]!.lines).toBeGreaterThanOrEqual(side.best[id]!.lines);
+          }
+          for (let i = 0; i < side.stars.length; i++) {
+            expect(Number(m.stars[i])).toBeGreaterThanOrEqual(Number(side.stars[i]));
+          }
+        }
+      }
+  });
+
+  it('takes the max of each field and rung', () => {
+    const a = { ...filled(), stars: '312', gamesPlayed: 5, totalLines: 40 };
+    const b = { ...filled(), stars: '1331', gamesPlayed: 9, totalLines: 20 };
+    b.best = { ...b.best, classic: { score: 5000, lines: 2 } };
+    const m = mergeProfiles(a, b);
+    expect(m.stars).toBe('3331');
+    expect(m.gamesPlayed).toBe(9);
+    expect(m.totalLines).toBe(40);
+    expect(m.best.classic).toEqual({ score: 5000, lines: 14 });
+  });
+
+  it('is idempotent and keeps a merge with a new profile unchanged', () => {
+    const p = filled();
+    expect(mergeProfiles(p, p)).toEqual(p);
+    expect(mergeProfiles(p, newProfile())).toEqual(p);
+  });
+
+  it('prefers a chosen name over the default, else the same name either way', () => {
+    expect(mergeProfiles(rename(newProfile(), 'Ada'), newProfile()).name).toBe('Ada');
+    expect(mergeProfiles(newProfile(), rename(newProfile(), 'Ada')).name).toBe('Ada');
+    expect(mergeProfiles(rename(newProfile(), 'Ada'), rename(newProfile(), 'Bo')).name).toBe('Bo');
+  });
+
+  it('merges full-length ladders', () => {
+    const a = { ...newProfile(), stars: '1'.repeat(MAX_RUNGS) };
+    const b = { ...newProfile(), stars: '3'.repeat(MAX_RUNGS - 1) };
+    const m = mergeProfiles(a, b);
+    expect(m.stars).toBe('3'.repeat(MAX_RUNGS - 1) + '1');
+  });
+});
+
+describe('profile from the cloud', () => {
+  /** The JSON object this version uploads for `p`, with `patch` on top. */
+  const upload = (p: Profile, patch: Record<string, unknown> = {}): unknown => ({
+    ...(JSON.parse(toProfileText(p)) as object),
+    ...patch,
+  });
+
+  it('accepts exactly what this version uploads', () => {
+    const p = filled();
+    expect(profileFromCloud(upload(p))).toEqual(p);
+    expect(profileFromCloud(upload(newProfile()))).toEqual(newProfile());
+  });
+
+  it('drops bests of modes it does not know, after checking them', () => {
+    const p = filled();
+    const best = {
+      ...p.best,
+      marathon: { score: 1, lines: 1 },
+      constructor: { score: 9, lines: 9 },
+    };
+    const read = profileFromCloud(upload(p, { best }));
+    expect(read).toEqual(p);
+    expect(Object.keys(read!.best)).toEqual(Object.keys(MODES));
+  });
+
+  it('fills in bests missing from the save', () => {
+    expect(profileFromCloud(upload(newProfile(), { best: {} }))).toEqual(newProfile());
+  });
+
+  it('cleans the name like a typed one', () => {
+    expect(profileFromCloud(upload(newProfile(), { name: 'A\u202eda' }))?.name).toBe('Ada');
+  });
+
+  const p = filled();
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['an array', [upload(p)]],
+    ['a string', toProfileText(p)],
+    ['a newer version', upload(p, { v: PROFILE_VERSION + 1 })],
+    ['an older version', upload(p, { v: 0 })],
+    ['an extra key', upload(p, { admin: true })],
+    ['a missing key', JSON.parse(toProfileText(p).replace(/"stars":"\d*",/, ''))],
+    ['__proto__ at the top', JSON.parse(`{"__proto__":{"x":1},${toProfileText(p).slice(1)}`)],
+    ['__proto__ in best', upload(p, { best: JSON.parse('{"__proto__":{"score":1,"lines":1}}') })],
+    ['a best with an extra key', upload(p, { best: { classic: { score: 1, lines: 1, x: 1 } } })],
+    ['a best that is a number', upload(p, { best: { classic: 5 } })],
+    [
+      'too many modes',
+      upload(p, {
+        best: Object.fromEntries(
+          Array.from({ length: 17 }, (_, i) => [`m${i}`, { score: 0, lines: 0 }]),
+        ),
+      }),
+    ],
+    ['a string count', upload(p, { gamesPlayed: '5' })],
+    ['a fractional count', upload(p, { totalLines: 1.5 })],
+    ['a negative count', upload(p, { totalLines: -1 })],
+    ['a count over the cap', upload(p, { gamesPlayed: MAX_COUNT + 1 })],
+    ['a huge score', upload(p, { best: { classic: { score: 1e300, lines: 0 } } })],
+    ['stars that are not 1..3', upload(p, { stars: '12<script>' })],
+    ['stars as a number', upload(p, { stars: 123 })],
+    ['oversize stars', upload(p, { stars: '1'.repeat(MAX_RUNGS + 1) })],
+    ['a name that is not text', upload(p, { name: ['Ada'] })],
+    ['an oversize name', upload(p, { name: 'A'.repeat(100_000) })],
+  ])('rejects %s', (_, data) => {
+    expect(profileFromCloud(data)).toBeNull();
+  });
+
+  it('never pollutes prototypes', () => {
+    profileFromCloud(JSON.parse(`{"__proto__":{"polluted":1},${toProfileText(p).slice(1)}`));
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

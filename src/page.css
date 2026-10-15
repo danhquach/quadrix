@@ -222,6 +222,49 @@ p {
 .rung-list .locked .stars {
   color: #888;
 }
+/* Cloud save: scrolls inside the well on short screens. */
+.cloud {
+  box-sizing: border-box;
+  width: min(100%, 22em);
+  max-height: 100%;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.cloud-status,
+.cloud-note {
+  text-align: center;
+  color: #bbb;
+}
+.cloud-note:empty,
+.link-code:empty {
+  display: none;
+}
+.link-code {
+  text-align: center;
+  font-size: 2rem;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  color: #fc3;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.link-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.link-entry input {
+  min-height: 44px;
+  font-size: 1.1rem;
+  font-family: ui-monospace, monospace;
+  text-transform: uppercase;
+  text-align: center;
+  /* Editable on iOS (see #name); 1.1rem stays over 16px, so focus never zooms. */
+  user-select: text;
+  -webkit-user-select: text;
+}
 .countdown {
   font-size: 4rem;
   font-variant-numeric: tabular-nums;

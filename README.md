@@ -39,11 +39,12 @@ src/
   core/           pure engine, no DOM (unit-tested)
     game.ts       board, movement, locking, line clears
     pieces.ts     shapes, rotation, seeded 7-bag
-    profile.ts    player profile: name, bests, rung stars, totals; validated on read
+    profile.ts    player profile: name, bests, rung stars, totals; validated on read; merge
     session.ts    gravity clock, pause and resume countdown
     snapshot.ts   versioned save format for a game in progress, validated on read
     modes/        Mode interface + classic + override
   ui/             pure UI helpers, no DOM (unit-tested)
+    cloud.ts      cloud save client: anonymous sign-in, sync and merge, device link codes
     fit.ts        board sizing to whole device pixels
     gestures.ts   touch gesture recognition
     keys.ts       keyboard map

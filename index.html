@@ -49,6 +49,36 @@
             <button id="play-ladder" type="button">Ladder</button>
             <button type="button" data-mode="classic">Classic</button>
             <button type="button" data-mode="override">Override</button>
+            <button id="open-cloud" type="button" hidden>Cloud save</button>
+          </div>
+          <div
+            id="cloud"
+            class="pause-menu cloud"
+            role="group"
+            aria-labelledby="cloud-title"
+            hidden
+          >
+            <p id="cloud-title" class="pause-title">Cloud save</p>
+            <p id="cloud-status" class="cloud-status" aria-live="polite"></p>
+            <button id="cloud-on" type="button">Turn on cloud save</button>
+            <button id="cloud-link" type="button">Link another device</button>
+            <p id="link-code" class="link-code" aria-label="Link code"></p>
+            <label class="link-entry">
+              Link code from another device
+              <input
+                id="link-input"
+                type="text"
+                maxlength="16"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                placeholder="ABCD-EFGH"
+              />
+            </label>
+            <button id="link-submit" type="button">Enter link code</button>
+            <p id="cloud-note" class="cloud-note" aria-live="polite"></p>
+            <button id="cloud-off" type="button">Turn off cloud save on this device</button>
+            <button id="cloud-back" type="button">Back</button>
           </div>
           <div id="ladder" class="pause-menu ladder" role="group" aria-label="Ladder" hidden>
             <div class="ladder-head">
