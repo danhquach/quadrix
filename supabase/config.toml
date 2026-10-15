@@ -1,0 +1,25 @@
+# Supabase CLI settings: `supabase start` runs them locally, `supabase config push`
+# applies them to the hosted project. See README.md in this folder.
+project_id = "quadrix"
+
+[api]
+# Only `public` is reachable over the API; the `private` schema never is.
+schemas = ["public"]
+
+[db]
+# Supabase's current major version. The SQL tests run on Postgres 18 (PGlite); the
+# migrations use nothing newer than Postgres 13.
+major_version = 17
+
+[auth]
+# Players have no account: each browser signs in anonymously.
+enable_signup = true
+enable_anonymous_sign_ins = true
+
+[auth.email]
+# No email accounts.
+enable_signup = false
+
+[auth.rate_limit]
+# Anonymous sign-ins per hour per IP address.
+anonymous_users = 30

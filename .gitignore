@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .env
+# Supabase CLI state after `supabase link` (project ref, database host).
+supabase/.temp/
+supabase/.branches/
+supabase/.env
 .DS_Store
 .claude/worktrees/
 .claude/agent-memory/
