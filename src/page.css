@@ -51,6 +51,10 @@ p {
   gap: 8px;
   align-items: center;
 }
+/* Wide enough for "Resume" too, so toggling never reflows the layout. */
+#pause {
+  min-width: 5em;
+}
 .hud {
   flex-basis: 100%;
   display: flex;
@@ -79,9 +83,11 @@ p {
   font-size: 0.85em;
   color: #999;
 }
-/* The board takes all remaining space; main.ts sizes and centres the canvas in it. */
+/* The board takes all remaining space; main.ts sizes and centres the canvas in it.
+   It is also the gesture area (src/ui/gestures.ts). */
 .well {
   position: relative;
+  touch-action: none;
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
@@ -138,6 +144,47 @@ p {
   .next {
     flex-direction: row;
     align-items: center;
+  }
+}
+/* On-screen buttons, only on touch screens. Portrait: one row under the board. */
+.pad {
+  display: none;
+}
+@media (any-pointer: coarse) {
+  .pad {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    touch-action: none;
+  }
+  .pad button {
+    min-width: 44px;
+    min-height: 52px;
+    padding: 0;
+    font-size: 1.5rem;
+    color: #eee;
+    background: #222;
+    border: 1px solid #444;
+    border-radius: 8px;
+    touch-action: none;
+  }
+  .pad button:active {
+    background: #3a3a3a;
+  }
+  .controls button,
+  .controls select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+/* Landscape: a two-column block beside the board, under the right thumb. */
+@media (any-pointer: coarse) and (orientation: landscape) {
+  .pad {
+    grid-template-columns: repeat(2, 56px);
+    align-content: end;
+  }
+  .pad [data-action='rotate'] {
+    grid-column: span 2;
   }
 }
 /* No keyboard on a touch screen: the key help only takes space. */

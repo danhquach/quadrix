@@ -19,6 +19,7 @@
             </select>
           </label>
           <button id="start" type="button">Start</button>
+          <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
         </div>
         <div class="hud">
           <p>Score <span id="score">0</span></p>
@@ -34,6 +35,13 @@
       </section>
       <div class="well">
         <canvas id="board" role="img" aria-label="Game board"></canvas>
+      </div>
+      <div class="pad" role="group" aria-label="Touch controls">
+        <button type="button" tabindex="-1" data-action="left" aria-label="Move left">←</button>
+        <button type="button" tabindex="-1" data-action="right" aria-label="Move right">→</button>
+        <button type="button" tabindex="-1" data-action="softDrop" aria-label="Soft drop">↓</button>
+        <button type="button" tabindex="-1" data-action="hardDrop" aria-label="Hard drop">⤓</button>
+        <button type="button" tabindex="-1" data-action="rotate" aria-label="Rotate">↻</button>
       </div>
     </main>
     <script type="module" src="/src/main.ts"></script>
