@@ -345,7 +345,8 @@ p {
 .set-keys button {
   min-width: 6em;
 }
-.set-keys button[aria-pressed='true'] {
+.set-keys button[aria-pressed='true'],
+#mute[aria-pressed='true'] {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }

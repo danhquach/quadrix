@@ -42,6 +42,9 @@ const custom: Settings = {
   delayMs: 120,
   intervalMs: 0,
   keys: { left: 'a', right: 'd', rotate: 'w', softDrop: 's', hardDrop: ' ', pause: 'p' },
+  muted: true,
+  sfxVolume: 0,
+  musicVolume: 100,
 };
 
 describe('parseSettings', () => {
@@ -86,9 +89,46 @@ describe('parseSettings', () => {
 
   it('replaces each invalid value with its default and keeps the valid ones', () => {
     const s = parseSettings(
-      JSON.stringify({ ghost: 'no', delayMs: 100, intervalMs: '20', keys: custom.keys }),
+      JSON.stringify({
+        ghost: 'no',
+        delayMs: 100,
+        intervalMs: '20',
+        keys: custom.keys,
+        muted: true,
+        sfxVolume: 0,
+        musicVolume: 100,
+      }),
     );
     expect(s).toEqual({ ...custom, ghost: true, delayMs: 100, intervalMs: 33 });
+  });
+
+  it('keeps the volume range edges and refuses anything else', () => {
+    const vol = (v: unknown) => parseSettings(JSON.stringify({ sfxVolume: v, musicVolume: v }));
+    expect(vol(0)).toMatchObject({ sfxVolume: 0, musicVolume: 0 });
+    expect(vol(100)).toMatchObject({ sfxVolume: 100, musicVolume: 100 });
+    for (const v of [-1, 101, 50.5, '50', null, true, [50], { v: 50 }]) {
+      expect(vol(v)).toMatchObject({
+        sfxVolume: DEFAULT_SETTINGS.sfxVolume,
+        musicVolume: DEFAULT_SETTINGS.musicVolume,
+      });
+    }
+    expect(parseSettings('{"sfxVolume":1e400}').sfxVolume).toBe(DEFAULT_SETTINGS.sfxVolume);
+  });
+
+  it('reads mute as a boolean only, and never from the prototype', () => {
+    expect(parseSettings('{"muted":true}').muted).toBe(true);
+    expect(parseSettings('{"muted":false}').muted).toBe(false);
+    for (const v of ['true', 1, null, [true], { v: true }]) {
+      expect(parseSettings(JSON.stringify({ muted: v })).muted).toBe(false);
+    }
+    const polluted = parseSettings('{"__proto__":{"muted":true,"sfxVolume":0}}');
+    expect(polluted).toEqual(DEFAULT_SETTINGS);
+    expect(({} as { muted?: boolean }).muted).toBeUndefined();
+  });
+
+  it('refuses a stored binding on M, the mute key', () => {
+    const s = parseSettings(JSON.stringify({ keys: { ...DEFAULT_KEYS, pause: 'm' } }));
+    expect(s.keys).toEqual(DEFAULT_KEYS);
   });
 
   it('refuses numbers that are not whole, finite numbers', () => {
@@ -226,6 +266,14 @@ describe('bindKey', () => {
 
   it('allows binding an action to the key it already has', () => {
     expect(bindKey(DEFAULT_SETTINGS, 'left', 'ArrowLeft')).toEqual({ settings: DEFAULT_SETTINGS });
+  });
+
+  it('refuses M, which mutes, in either case', () => {
+    for (const key of ['m', 'M']) {
+      expect(bindKey(DEFAULT_SETTINGS, 'left', key)).toEqual({
+        error: "M turns the sound on and off, so it can't be bound.",
+      });
+    }
   });
 
   it('refuses keys that keep their own job or are not on the list, without echoing them', () => {

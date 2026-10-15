@@ -9,7 +9,7 @@ import {
   writeGuideClosed,
   type GuideStorage,
 } from './guide.ts';
-import { DEFAULT_KEYS, actionForKey, keyAction } from './keys.ts';
+import { DEFAULT_KEYS, actionForKey, isMuteKey, keyAction } from './keys.ts';
 
 function memory(
   initial: Record<string, string> = {},
@@ -36,6 +36,7 @@ describe('GUIDE_ROWS', () => {
     for (const row of GUIDE_ROWS) {
       for (const { key } of row.keys) {
         if (row.action === 'guide') expect(isGuideKey(key, false)).toBe(true);
+        else if (row.action === 'mute') expect(isMuteKey(key, false)).toBe(true);
         // ← and → share the Move row.
         else if (key === 'ArrowRight') expect(actionForKey(key)).toBe('right');
         else expect(actionForKey(key)).toBe(row.action);
@@ -50,6 +51,7 @@ describe('GUIDE_ROWS', () => {
       ' ',
       'p',
       'Escape',
+      'm',
       '?',
     ]) {
       expect(listed).toContain(key);
@@ -73,7 +75,7 @@ describe('guideRows', () => {
     expect(rows.find((r) => r.action === 'pause')!.keys.map((k) => k.label)).toEqual(['Q', 'Esc']);
     for (const row of rows) {
       for (const { key } of row.keys) {
-        if (row.action === 'guide') continue;
+        if (row.action === 'guide' || row.action === 'mute') continue;
         if (key === 'd') expect(actionForKey(key, keys)).toBe('right');
         else expect(actionForKey(key, keys)).toBe(row.action);
       }

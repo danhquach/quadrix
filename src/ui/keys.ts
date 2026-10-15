@@ -16,6 +16,9 @@ export const DEFAULT_KEYS: KeyMap = {
 /** Esc always pauses, besides the bound key, and can't be bound: it also closes Settings. */
 const PAUSE_ALWAYS = 'Escape';
 
+/** M mutes and unmutes at any time, so it can't be bound. */
+export const MUTE_KEY = 'm';
+
 const NAMED: Readonly<Record<string, string>> = {
   ArrowLeft: '←',
   ArrowRight: '→',
@@ -26,10 +29,16 @@ const NAMED: Readonly<Record<string, string>> = {
 
 /**
  * Whether a key may be bound: arrows, Space, a–z, 0–9 and plain punctuation. Esc, `?`,
- * Tab, Enter and the rest keep their own jobs. Pass a key through normalKey first.
+ * M, Tab, Enter and the rest keep their own jobs. Pass a key through normalKey first.
  */
 export function isBindable(key: string): boolean {
+  if (key === MUTE_KEY) return false;
   return Object.hasOwn(NAMED, key) || /^[a-z0-9`\-=[\]\\;',./]$/.test(key);
+}
+
+/** Whether a keydown mutes or unmutes: M (either case), without Ctrl, Cmd or Alt. */
+export function isMuteKey(key: string, modified: boolean): boolean {
+  return !modified && key.length === 1 && normalKey(key) === MUTE_KEY;
 }
 
 /** A key as bindings store it: one letter in lower case (Shift or Caps Lock still match). */

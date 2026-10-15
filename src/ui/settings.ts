@@ -1,5 +1,5 @@
 import { ACTIONS, type Action } from './gestures.ts';
-import { DEFAULT_KEYS, isBindable, keyLabel, normalKey, type KeyMap } from './keys.ts';
+import { DEFAULT_KEYS, MUTE_KEY, isBindable, keyLabel, normalKey, type KeyMap } from './keys.ts';
 import { REPEAT_TIMING, type RepeatTiming } from './repeat.ts';
 import type { SaveStorage } from './save.ts';
 
@@ -11,16 +11,25 @@ export interface Settings {
   readonly delayMs: number;
   readonly intervalMs: number;
   readonly keys: KeyMap;
+  /** Every sound off (the HUD's Mute button and M). */
+  readonly muted: boolean;
+  /** Effects and music volume, 0–100. */
+  readonly sfxVolume: number;
+  readonly musicVolume: number;
 }
 
 export const DELAY_RANGE = { min: 50, max: 300 } as const;
 export const INTERVAL_RANGE = { min: 0, max: 100 } as const;
+export const VOLUME_RANGE = { min: 0, max: 100 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   ghost: true,
   delayMs: REPEAT_TIMING.delayMs,
   intervalMs: REPEAT_TIMING.intervalMs,
   keys: DEFAULT_KEYS,
+  muted: false,
+  sfxVolume: 70,
+  musicVolume: 50,
 };
 
 /** Names of the bindable actions, in the order Settings lists them. Plain text. */
@@ -82,11 +91,15 @@ export function parseSettings(text: string | null): Settings {
   }
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return DEFAULT_SETTINGS;
   const ghost = own(raw, 'ghost');
+  const muted = own(raw, 'muted');
   return {
     ghost: typeof ghost === 'boolean' ? ghost : DEFAULT_SETTINGS.ghost,
     delayMs: inRange(own(raw, 'delayMs'), DELAY_RANGE) ?? DEFAULT_SETTINGS.delayMs,
     intervalMs: inRange(own(raw, 'intervalMs'), INTERVAL_RANGE) ?? DEFAULT_SETTINGS.intervalMs,
     keys: parseKeys(own(raw, 'keys')),
+    muted: typeof muted === 'boolean' ? muted : DEFAULT_SETTINGS.muted,
+    sfxVolume: inRange(own(raw, 'sfxVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.sfxVolume,
+    musicVolume: inRange(own(raw, 'musicVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.musicVolume,
   };
 }
 
@@ -123,6 +136,7 @@ export function bindKey(
   key: string,
 ): { settings: Settings } | { error: string } {
   const k = normalKey(key);
+  if (k === MUTE_KEY) return { error: "M turns the sound on and off, so it can't be bound." };
   if (!isBindable(k)) return { error: "That key can't be used. Try a letter, number or arrow." };
   const taken = ACTIONS.find((a) => a !== action && s.keys[a] === k);
   if (taken) return { error: `${keyLabel(k)} is already used for ${ACTION_NAMES[taken]}.` };

@@ -54,6 +54,8 @@ src/
     played.ts     when a game counts toward the profile (once, at its end)
     profile.ts    keeps the player profile in localStorage
     save.ts       keeps the unfinished game in localStorage
+    sound.ts      which sounds each frame plays; the effect and music notes
+    audio.ts      Web Audio playback: effects, music loop, mute, volumes
   main.ts         canvas render + keyboard, touch and button input
 supabase/         cloud save backend: migrations, SQL tests (PGlite), setup README
 tools/            version check + pre-push hook (CI and local)
@@ -61,9 +63,16 @@ tools/            version check + pre-push hook (CI and local)
 
 To change a mode's rules, implement the `Mode` hooks in its file. If a rule needs a hook the engine doesn't have yet, add it to `src/core/modes/mode.ts` and call it from `game.ts`.
 
+## Sound
+
+- Effects for move, rotate, lock, line clear (longer and higher for bigger clears), level up and game over; one music loop that plays only while a game runs, so it stops on pause and carries on after the countdown.
+- Mute: the Mute button beside Settings, or M at any time. Mute, effects volume and music volume are stored with the settings; Reset to defaults keeps the mute choice. M can't be bound: a binding on M stored by an earlier version falls back to the default keys.
+- No sound plays before the player's first click, tap or key press (browser autoplay rules).
+- No audio files: every sound, the music included, is original and synthesized in code at runtime (`src/ui/sound.ts`, `src/ui/audio.ts`), so the repo carries no third-party audio and nothing to license.
+
 ## Controls
 
-- Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause · ? controls guide (shown beside the board on the first Start until closed)
+- Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause · M mute · ? controls guide (shown beside the board on the first Start until closed)
 - Held keys: ← → and ↓ repeat on the game's own timing, the same on every computer (the computer's key repeat is ignored): one move on press, then after 167 ms one move every 33 ms. With ← and → both held, the last one pressed wins; releasing it falls back to the other after a fresh delay. A key held through a pause waits a fresh delay when play resumes. ↑ and Space act once per press.
 - Touch, on the board: tap rotate · drag sideways to move one column per cell · drag down to soft drop · flick down to hard drop
 - Touch buttons (touch screens only; ← → ↓ repeat while held): ← → ↓ ⤓ ↻ under the board in portrait, beside it in landscape; Pause sits next to Start

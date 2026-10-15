@@ -1,5 +1,5 @@
 import type { Action } from './gestures.ts';
-import { DEFAULT_KEYS, keyLabel, type KeyMap } from './keys.ts';
+import { DEFAULT_KEYS, MUTE_KEY, keyLabel, type KeyMap } from './keys.ts';
 
 /** The parts of Web Storage the guide uses; `localStorage` in the app, a stub in tests. */
 export type GuideStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -10,7 +10,7 @@ const CLOSED = 'closed';
 /** One line of the controls guide: the keys shown, the KeyboardEvent.key each one sends, and what they do. */
 export interface GuideRow {
   readonly keys: readonly { readonly label: string; readonly key: string }[];
-  readonly action: Action | 'guide';
+  readonly action: Action | 'guide' | 'mute';
   readonly text: string;
 }
 
@@ -23,6 +23,11 @@ export function guideRows(keys: KeyMap): readonly GuideRow[] {
     { keys: [bound('softDrop')], action: 'softDrop', text: 'Soft drop' },
     { keys: [bound('hardDrop')], action: 'hardDrop', text: 'Hard drop' },
     { keys: [bound('pause'), { label: 'Esc', key: 'Escape' }], action: 'pause', text: 'Pause' },
+    {
+      keys: [{ label: keyLabel(MUTE_KEY), key: MUTE_KEY }],
+      action: 'mute',
+      text: 'Sound on or off',
+    },
     { keys: [{ label: '?', key: '?' }], action: 'guide', text: 'Show or hide controls' },
   ];
 }
