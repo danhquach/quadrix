@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { Game } from './game.ts';
+import { COLS, Game, ROWS } from './game.ts';
 import { MODES } from './modes/index.ts';
-import { COUNTDOWN_MS, Session, type Move } from './session.ts';
+import { COUNTDOWN_MS, LOCK_DELAY_MS, MAX_LOCK_RESETS, Session, type Move } from './session.ts';
 
 const GRAVITY = MODES.classic!.gravityMs(1);
 const MOVES: Move[] = ['left', 'right', 'rotate', 'softDrop', 'hardDrop'];
@@ -131,5 +131,248 @@ describe('session', () => {
     expect(s.game.state.score).toBe(1);
     s.tick(GRAVITY);
     expect(s.game.state.piece.y).toBe(y + 1);
+  });
+
+  describe('lock delay', () => {
+    /** An O resting on the floor, cells in columns x+1 and x+2. */
+    function resting(x = 3): Session {
+      const s = session();
+      s.game.state.piece = { kind: 'O', rot: 0, x, y: ROWS - 2 };
+      return s;
+    }
+
+    /** Fill the bottom row in columns 0..4: an O at x 1..3 rests on it, at x 4 it hangs free. */
+    function ledge(s: Session): void {
+      for (let x = 0; x <= 4; x++) s.game.state.board[ROWS - 1]![x] = 1;
+      s.game.state.piece = { kind: 'O', rot: 0, x: 2, y: ROWS - 3 };
+    }
+
+    it('locks a resting piece LOCK_DELAY_MS after touchdown', () => {
+      const s = resting();
+      s.tick(10);
+      s.tick(10 + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(10 + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+      expect(s.game.state.board[ROWS - 1]![4]).not.toBe(0);
+    });
+
+    it('starts the delay when gravity lands the piece, not before', () => {
+      const s = session();
+      s.game.state.piece = { kind: 'O', rot: 0, x: 3, y: ROWS - 3 };
+      s.tick(GRAVITY);
+      expect(s.game.state.piece.y).toBe(ROWS - 2);
+      s.tick(GRAVITY + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(GRAVITY + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('a gravity step on a resting piece does not lock it', () => {
+      const s = resting();
+      s.tick(GRAVITY - LOCK_DELAY_MS + 1);
+      s.tick(GRAVITY);
+      expect(s.game.locks).toBe(0);
+    });
+
+    it('slides a resting piece under an overhang', () => {
+      const s = resting(4);
+      // A roof over columns 0..3 with a two-row gap under it.
+      for (let x = 0; x <= 3; x++) s.game.state.board[ROWS - 3]![x] = 1;
+      s.tick(0);
+      let t = 0;
+      for (let i = 0; i < 5; i++) {
+        t += LOCK_DELAY_MS - 100;
+        s.tick(t);
+        expect(s.act('left', t)).toBe(true);
+      }
+      expect(s.game.locks).toBe(0);
+      expect(s.game.state.piece.x).toBe(-1);
+      s.tick(t + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+      expect(s.game.state.board[ROWS - 1]!.slice(0, 2)).not.toContain(0);
+      expect(s.game.state.board[ROWS - 2]!.slice(0, 2)).not.toContain(0);
+    });
+
+    it('a failed move does not restart the timer', () => {
+      const s = resting(-1);
+      s.tick(0);
+      s.act('left', LOCK_DELAY_MS - 1);
+      s.tick(LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('a rotate restarts the timer', () => {
+      const s = resting();
+      s.tick(0);
+      expect(s.act('rotate', 400)).toBe(true);
+      s.tick(400 + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(400 + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it(`stops restarting the timer after ${MAX_LOCK_RESETS} resets`, () => {
+      const s = resting();
+      s.tick(0);
+      let t = 0;
+      for (let i = 0; i < MAX_LOCK_RESETS; i++) {
+        t += LOCK_DELAY_MS - 1;
+        s.act(i % 2 ? 'right' : 'left', t);
+        expect(s.game.locks).toBe(0);
+      }
+      // The last reset gave a full delay; further moves add nothing.
+      s.act('left', t + 100);
+      s.tick(t + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(t + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('cannot stall forever by moving back and forth', () => {
+      const s = resting();
+      for (let t = 0; t < 60_000 && s.game.locks === 0; t += 50) {
+        s.act(t % 100 ? 'right' : 'left', t);
+        s.tick(t);
+      }
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('stops the timer while the piece is lifted off, restarts it on touchdown', () => {
+      const s = session();
+      ledge(s);
+      s.tick(0);
+      s.act('right', 100);
+      s.act('right', 200);
+      // Hanging past the ledge's edge: no lock however long the timer would have run.
+      expect(s.game.grounded()).toBe(false);
+      s.tick(GRAVITY - 1);
+      expect(s.game.locks).toBe(0);
+      // Gravity lands it on the floor: a fresh delay from there.
+      s.tick(GRAVITY);
+      expect(s.game.grounded()).toBe(true);
+      s.tick(GRAVITY + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(GRAVITY + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('with its resets used up, locks the moment it next touches down', () => {
+      const s = session();
+      ledge(s);
+      s.tick(0);
+      let t = 0;
+      for (let i = 0; i < MAX_LOCK_RESETS; i++) s.act(i % 2 ? 'right' : 'left', (t += 10));
+      expect(s.game.state.piece.x).toBe(1);
+      for (let i = 0; i < 3; i++) s.act('right', (t += 10));
+      expect(s.game.grounded()).toBe(false);
+      expect(s.game.locks).toBe(0);
+      s.tick(GRAVITY);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('holding soft drop on a resting piece does not lock it early', () => {
+      const s = resting();
+      s.tick(0);
+      for (let t = 0; t < LOCK_DELAY_MS; t += 16) {
+        s.act('softDrop', t);
+        s.tick(t);
+      }
+      expect(s.game.locks).toBe(0);
+      expect(s.game.state.score).toBe(0);
+      s.tick(LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('soft drop onto the stack starts the delay', () => {
+      const s = session();
+      s.game.state.piece = { kind: 'O', rot: 0, x: 3, y: ROWS - 3 };
+      s.act('softDrop', 100);
+      expect(s.game.grounded()).toBe(true);
+      s.tick(100 + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(100 + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('hard drop still locks instantly', () => {
+      const s = session();
+      s.act('hardDrop', 0);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('a new piece gets a fresh set of resets', () => {
+      const s = resting();
+      s.tick(0);
+      let t = 0;
+      for (let i = 0; i < MAX_LOCK_RESETS; i++) s.act(i % 2 ? 'right' : 'left', (t += 10));
+      s.tick((t += LOCK_DELAY_MS));
+      expect(s.game.locks).toBe(1);
+      s.game.state.piece = { kind: 'O', rot: 0, x: 3, y: ROWS - 4 };
+      s.tick(t);
+      expect(s.game.locks).toBe(1);
+      s.act('left', t + 100);
+      s.tick(t + 100 + LOCK_DELAY_MS - 1);
+      expect(s.game.locks).toBe(1);
+      s.tick(t + 100 + LOCK_DELAY_MS);
+      expect(s.game.locks).toBe(2);
+    });
+
+    it('keeps what is left of the delay across a pause', () => {
+      const s = resting();
+      s.tick(0);
+      s.tick(300);
+      s.pause();
+      s.tick(10_000);
+      expect(s.game.locks).toBe(0);
+      s.resume(10_000);
+      const end = 10_000 + COUNTDOWN_MS;
+      s.tick(end);
+      s.tick(end + LOCK_DELAY_MS - 300 - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(end + LOCK_DELAY_MS - 300);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('keeps the delay left when paused again during the countdown', () => {
+      const s = resting();
+      s.tick(0);
+      s.tick(400);
+      s.pause();
+      s.resume(1000);
+      s.tick(1000 + COUNTDOWN_MS - 1);
+      s.pause();
+      s.resume(9000);
+      const end = 9000 + COUNTDOWN_MS;
+      s.tick(end);
+      s.tick(end + LOCK_DELAY_MS - 400 - 1);
+      expect(s.game.locks).toBe(0);
+      s.tick(end + LOCK_DELAY_MS - 400);
+      expect(s.game.locks).toBe(1);
+    });
+
+    it('gives the piece after a hard drop a full gravity interval', () => {
+      const s = session();
+      s.tick(GRAVITY - 1);
+      s.act('hardDrop', GRAVITY - 1);
+      const y = s.game.state.piece.y;
+      s.tick(2 * GRAVITY - 2);
+      expect(s.game.state.piece.y).toBe(y);
+      s.tick(2 * GRAVITY - 1);
+      expect(s.game.state.piece.y).toBe(y + 1);
+    });
+
+    it('locks a piece resting on a full stack and ends the game when the next cannot spawn', () => {
+      const s = session();
+      for (let y = 2; y < ROWS; y++)
+        s.game.state.board[y] = Array<number>(COLS)
+          .fill(1)
+          .map((c, x) => (x === 9 ? 0 : c));
+      s.game.state.piece = { kind: 'O', rot: 0, x: 3, y: 0 };
+      s.tick(0);
+      s.tick(LOCK_DELAY_MS);
+      expect(s.game.state.over).toBe(true);
+      expect(s.act('left', LOCK_DELAY_MS)).toBe(false);
+    });
   });
 });
