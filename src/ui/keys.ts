@@ -20,9 +20,10 @@ export function actionForKey(key: string): Action | null {
 /**
  * What a keydown does in a game that is in play: the action to apply (or null) and
  * whether to swallow the key. Keys held with Ctrl, Cmd or Alt are the browser's
- * (Cmd+P prints), so they are left alone. While paused only the pause keys act, and auto-repeat
- * never toggles pause. Space is left to the browser then, so it presses the focused
- * menu button; other game keys are still swallowed so arrows can't scroll the page.
+ * (Cmd+P prints), so they are left alone. The computer's auto-repeat never acts: held
+ * moves repeat on the game's own timing (repeat.ts). While paused only the pause keys act.
+ * Space is left to the browser then, so it presses the focused menu button; other game
+ * keys are still swallowed so arrows can't scroll the page.
  */
 export function keyAction(
   key: string,
@@ -33,6 +34,6 @@ export function keyAction(
   const action = actionForKey(key);
   if (!action || modified) return { action: null, preventDefault: false };
   if (action === 'pause') return { action: repeat ? null : action, preventDefault: true };
-  if (phase === 'running') return { action, preventDefault: true };
+  if (phase === 'running') return { action: repeat ? null : action, preventDefault: true };
   return { action: null, preventDefault: action !== 'hardDrop' };
 }

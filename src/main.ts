@@ -20,6 +20,7 @@ import { keyAction } from './ui/keys.ts';
 import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
 import { PlayedGame } from './ui/played.ts';
+import { KeyRepeat, heldMove } from './ui/repeat.ts';
 import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/profile.ts';
 import { clearSave, loadSave, resumable, writeSave } from './ui/save.ts';
 import { MARKS, PIECE_VARS, blockColors, drawBlock } from './ui/skin.ts';
@@ -587,12 +588,16 @@ function render(): void {
 
 function loop(now: number): void {
   session?.tick(now);
+  const running = session?.phase === 'running' && !session.game.state.over;
+  for (const move of keyRepeat.tick(now, running)) act(move);
   settle();
   render();
   requestAnimationFrame(loop);
 }
 
 const gestures = new GestureTracker();
+/** Held ← → ↓ keys, repeated on the game's own timing. */
+const keyRepeat = new KeyRepeat();
 
 /** Apply one player action, whatever its source. */
 function act(action: Action): void {
@@ -617,22 +622,33 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   renderGuide();
+  const modified = e.ctrlKey || e.metaKey || e.altKey;
+  // macOS drops the keyup of a key released while Cmd is down, so a modifier forgets held keys.
+  if (e.key === 'Meta' || e.key === 'Control' || e.key === 'Alt') keyRepeat.clear();
+  // Held in any phase, even between games, so a key already down repeats once play starts.
+  const held = heldMove(e.key, modified);
+  if (held && !e.repeat) keyRepeat.press(held, performance.now());
   if (!session || session.game.state.over) {
     // A key held through the end of a game must not repeat onto the result's buttons.
     if (e.repeat) e.preventDefault();
     return;
   }
-  const { action, preventDefault } = keyAction(
-    e.key,
-    session.phase,
-    e.repeat,
-    e.ctrlKey || e.metaKey || e.altKey,
-  );
+  const { action, preventDefault } = keyAction(e.key, session.phase, e.repeat, modified);
   if (action) act(action);
   if (preventDefault) e.preventDefault();
 });
 
-onLeaveScreen(document, window, pause);
+// Released whatever has focus: a held key must not keep repeating after its keyup.
+document.addEventListener('keyup', (e) => {
+  const held = heldMove(e.key, false);
+  if (held) keyRepeat.release(held, performance.now());
+});
+
+onLeaveScreen(document, window, () => {
+  // Keyups are lost while another window has focus, so held keys are forgotten.
+  keyRepeat.clear();
+  pause();
+});
 
 resumeBtn.addEventListener('click', () => session?.resume(performance.now()));
 document.querySelector('#restart')!.addEventListener('click', restart);
