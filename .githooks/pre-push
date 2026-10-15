@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stops a push whose version is not above main's (tools/pre-push.mjs).
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-push: node not found, so the version check cannot run (git push --no-verify skips it)." >&2
+  exit 1
+fi
+exec node tools/pre-push.mjs

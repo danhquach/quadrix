@@ -47,7 +47,10 @@ describe('game', () => {
 
   it('ends when a new piece cannot spawn', () => {
     const g = new Game(MODES.classic!, 1);
-    for (let y = 0; y < ROWS; y++) g.state.board[y] = Array<number>(COLS).fill(1).map((c, x) => (x === 9 ? 0 : c));
+    for (let y = 0; y < ROWS; y++)
+      g.state.board[y] = Array<number>(COLS)
+        .fill(1)
+        .map((c, x) => (x === 9 ? 0 : c));
     g.state.piece = { kind: 'O', rot: 0, x: 3, y: -2 };
     g.hardDrop();
     expect(g.state.over).toBe(true);

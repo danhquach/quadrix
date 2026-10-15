@@ -1,0 +1,2 @@
+# Hooks run under sh, so they keep LF line ends on every checkout.
+.githooks/* text eol=lf

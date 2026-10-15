@@ -50,7 +50,12 @@ function render(): void {
 }
 
 function loop(now: number): void {
-  if (game && !paused && !game.state.over && now - lastDrop >= game.state.mode.gravityMs(game.state.level)) {
+  if (
+    game &&
+    !paused &&
+    !game.state.over &&
+    now - lastDrop >= game.state.mode.gravityMs(game.state.level)
+  ) {
     game.step();
     lastDrop = now;
   }

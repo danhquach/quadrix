@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Supersede stale PR runs; on main, queue instead so a deploy is never cut off.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Lint, unit, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # npm ci runs the PR's own scripts; keep the token out of .git/config.
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Version raised over main's
+        # Each PR to main raises the version, so every deploy ships a new number.
+        # Dependabot's PRs never bump it and are let through.
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --depth=1 --no-tags origin "$BASE_REF"
+          node tools/version-check.mjs bump FETCH_HEAD
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist/
+
+  check:
+    # The required status check on main (ruleset "protect-main"): green only
+    # when every job above is. Add new jobs to `needs`.
+    name: Lint, test, build
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed
+        if: needs.build.result != 'success'
+        run: exit 1
+
+  deploy:
+    # Publishes the tested build from the job above, only after the required
+    # check is green, only for pushes to main.
+    name: Deploy to GitHub Pages
+    needs: [check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

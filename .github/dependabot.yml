@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR a week for routine bumps; majors still arrive one by one.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # Keeps the SHA pins in .github/workflows/ci.yml current, with the version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
