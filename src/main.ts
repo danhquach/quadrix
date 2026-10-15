@@ -2,10 +2,13 @@ import { COLS, Game, ROWS } from './core/game.ts';
 import { MODES } from './core/modes/index.ts';
 import { Session } from './core/session.ts';
 import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
+import { recordGame, rename } from './core/profile.ts';
 import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { keyAction } from './ui/keys.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
+import { PlayedGame, hasLocked } from './ui/played.ts';
+import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/profile.ts';
 import { clearSave, loadSave, writeSave } from './ui/save.ts';
 
 const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
@@ -22,6 +25,7 @@ const pauseMenu = document.querySelector<HTMLElement>('#pause-menu')!;
 const resumeBtn = document.querySelector<HTMLButtonElement>('#resume')!;
 const resumePrompt = document.querySelector<HTMLElement>('#resume-prompt')!;
 const resumeSavedBtn = document.querySelector<HTMLButtonElement>('#resume-saved')!;
+const nameInput = document.querySelector<HTMLInputElement>('#name')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -38,6 +42,29 @@ let saved: Game | null = loadSave(storage);
 /** The game's lock count at its last save. */
 let savedLocks = 0;
 
+const loaded = loadProfile(storage);
+/**
+ * Where the profile is written: nowhere if storage couldn't be read or holds a later
+ * version, so it is never blanked or downgraded.
+ */
+const profileStorage = loaded.stored ? storage : () => null;
+let profile = loaded.profile;
+// Store at once: creates the profile on first launch and writes back repaired fields.
+writeProfile(profileStorage, profile);
+nameInput.value = profile.name;
+const playedGame = new PlayedGame();
+
+/** Add a played game to the profile. */
+function recordPlayed(game: Game): void {
+  const { mode, score, lines } = game.state;
+  profile = updateProfile(profileStorage, profile, (p) => recordGame(p, mode.id, score, lines));
+}
+
+/** Record the session's game, once, when it ends: game over, Quit, Restart or a new Start. */
+function endSession(): void {
+  if (playedGame.end() && session) recordPlayed(session.game);
+}
+
 /** Save the game in progress (on every lock and on pause), or clear the save once it's over. */
 function persist(): void {
   if (!session) return;
@@ -47,7 +74,10 @@ function persist(): void {
 
 /** Save if a piece locked since the last save. */
 function persistOnLock(): void {
-  if (session && session.game.locks !== savedLocks) persist();
+  if (session && session.game.locks !== savedLocks) {
+    playedGame.played();
+    persist();
+  }
 }
 
 /** Board cell edge in canvas (device) pixels; set by fit(). */
@@ -99,6 +129,7 @@ function watchPixelRatio(): void {
 
 function start(): void {
   const mode = MODES[modeSelect.value] ?? MODES.classic!;
+  endSession();
   saved = null;
   session = new Session(new Game(mode), performance.now());
   persist();
@@ -113,10 +144,12 @@ function resumeSaved(): void {
   session = new Session(saved, performance.now());
   session.pause();
   savedLocks = session.game.locks;
+  if (hasLocked(saved.state)) playedGame.played();
   saved = null;
 }
 
 function discardSaved(): void {
+  if (saved && hasLocked(saved.state)) recordPlayed(saved);
   saved = null;
   clearSave(storage);
   startBtn.disabled = false;
@@ -132,6 +165,7 @@ function restart(): void {
 
 /** Back to the title state: no game. */
 function quit(): void {
+  endSession();
   session = null;
   clearSave(storage);
   stopRepeat();
@@ -187,7 +221,8 @@ function renderNext(kind: Kind | null): void {
 function showMenu(menu: HTMLElement, show: boolean, first: HTMLElement): void {
   if (menu.hidden !== show) return;
   menu.hidden = !show;
-  if (show) first.focus();
+  // Pausing to type a name leaves the focus in the name field.
+  if (show && document.activeElement !== nameInput) first.focus();
   else if (menu.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
 }
 
@@ -208,6 +243,10 @@ function render(): void {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   renderOverlay();
+  const modeId = session?.game.state.mode.id ?? modeSelect.value;
+  // The game in progress shows as Best as soon as it beats the record.
+  const best = Math.max(profile.best[modeId]?.score ?? 0, session?.game.state.score ?? 0);
+  setText('#best', String(best));
   if (!session) {
     renderNext(null);
     setText('#score', '0');
@@ -241,6 +280,7 @@ function render(): void {
 function loop(now: number): void {
   session?.tick(now);
   persistOnLock();
+  if (session?.game.state.over) endSession();
   render();
   requestAnimationFrame(loop);
 }
@@ -260,6 +300,8 @@ function act(action: Action): void {
 }
 
 document.addEventListener('keydown', (e) => {
+  // Typing a name is not playing: its keys stay in the field.
+  if (e.target === nameInput) return;
   if (!session || session.game.state.over) return;
   const { action, preventDefault } = keyAction(
     e.key,
@@ -374,4 +416,26 @@ watchPixelRatio();
 fit();
 
 startBtn.addEventListener('click', start);
+// The cleaned name goes back into the field (value is text, never markup).
+nameInput.addEventListener('change', () => {
+  profile = updateProfile(profileStorage, profile, (p) => rename(p, nameInput.value));
+  nameInput.value = profile.name;
+});
+nameInput.addEventListener('keydown', (e) => {
+  // Escape cancels the edit; Enter commits it (blur fires change).
+  if (e.key === 'Escape') nameInput.value = profile.name;
+  if (e.key === 'Enter' || e.key === 'Escape') nameInput.blur();
+});
+// Pieces don't fall while the player types.
+nameInput.addEventListener('focus', () => {
+  if (session?.phase === 'running' && !session.game.state.over) pause();
+});
+// Another tab changed the profile: show its records and name.
+window.addEventListener('storage', (e) => {
+  if (e.key !== PROFILE_KEY || !loaded.stored) return;
+  const fresh = loadProfile(storage);
+  if (!fresh.stored) return;
+  profile = fresh.profile;
+  if (document.activeElement !== nameInput) nameInput.value = profile.name;
+});
 requestAnimationFrame(loop);

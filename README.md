@@ -38,6 +38,7 @@ src/
   core/           pure engine, no DOM (unit-tested)
     game.ts       board, movement, locking, line clears
     pieces.ts     shapes, rotation, seeded 7-bag
+    profile.ts    player profile: name, bests, rung stars, totals; validated on read
     session.ts    gravity clock, pause and resume countdown
     snapshot.ts   versioned save format for a game in progress, validated on read
     modes/        Mode interface + classic + override
@@ -46,6 +47,8 @@ src/
     gestures.ts   touch gesture recognition
     keys.ts       keyboard map
     lifecycle.ts  auto-pause when the game leaves the screen
+    played.ts     when a game counts toward the profile (once, at its end)
+    profile.ts    keeps the player profile in localStorage
     save.ts       keeps the unfinished game in localStorage
   main.ts         canvas render + keyboard, touch and button input
 tools/            version check + pre-push hook (CI and local)
@@ -60,3 +63,4 @@ To change a mode's rules, implement the `Mode` hooks in its file. If a rule need
 - Touch buttons (touch screens only; ← → ↓ repeat while held): ← → ↓ ⤓ ↻ under the board in portrait, beside it in landscape; Pause sits next to Start
 - Pause: the menu covers the board (Resume, Restart, Quit); Resume and Restart count down 3-2-1 before pieces fall. The game also pauses itself when the tab or app goes to the background, the device locks or the window loses focus.
 - Reload: the game in progress is saved on every lock and on pause. After a reload (or iOS evicting the tab) the page offers Resume game? (Resume, Discard); Resume continues paused, exactly where it was. Game over, Discard and Quit clear the save; if storage is unavailable, play goes on without it. Start stays disabled until the player answers the offer. The save is per browser, not per tab: two tabs playing at once overwrite each other's save.
+- Profile: created on first launch as "Player" and kept in `localStorage` (`quadrix.profile`, versioned). It records the best score and most lines per mode, games played, total lines, and best stars per ladder rung (the highest rung unlocked follows from them). Edit the name in the Name field (Enter saves, Escape cancels; focusing it pauses the game): it is trimmed, cut to 16 characters, and stripped of control, bidi, zero-width and blank characters; a name with no letter, digit or emoji falls back to "Player". Best shows the record for the selected mode, or the current score once it beats it. A game counts when it ends (game over, Quit, Restart, a new Start, or Discard of a saved game) once a piece has locked. Invalid stored fields are reset one by one; if storage is unavailable the profile lives in memory for the visit. Every change is applied to the profile as stored at that moment, so games recorded in two tabs both count. A profile saved by a later version is read but never written back.

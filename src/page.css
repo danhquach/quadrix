@@ -51,6 +51,14 @@ p {
   gap: 8px;
   align-items: center;
 }
+/* body turns selection off; a text field needs it to be editable (iOS Safari).
+   16px keeps iOS from zooming the page when the field takes focus. */
+#name {
+  width: 7em;
+  font-size: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+}
 /* Wide enough for "Resume" too, so toggling never reflows the layout. */
 #pause {
   min-width: 5em;
@@ -61,6 +69,7 @@ p {
   align-items: center;
   gap: 16px;
 }
+.best span,
 .hud span {
   font-variant-numeric: tabular-nums;
 }
