@@ -10,7 +10,7 @@ import {
 } from './core/ladder.ts';
 import { MODES } from './core/modes/index.ts';
 import { Session } from './core/session.ts';
-import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
+import { KINDS, cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { fitBoard } from './ui/fit.ts';
@@ -22,8 +22,15 @@ import { onLeaveScreen } from './ui/lifecycle.ts';
 import { PlayedGame } from './ui/played.ts';
 import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/profile.ts';
 import { clearSave, loadSave, resumable, writeSave } from './ui/save.ts';
+import { MARKS, PIECE_VARS, blockColors, drawBlock } from './ui/skin.ts';
 
-const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
+// Colors are defined once, as CSS variables in page.css; the canvases read them here.
+const theme = getComputedStyle(document.documentElement);
+const cssColor = (name: string) => theme.getPropertyValue(name).trim();
+/** Block colors by board cell value (KINDS index + 1); 0 is empty. */
+const BLOCKS = PIECE_VARS.map((v) => blockColors(cssColor(v)));
+const WELL_BG = cssColor('--well-bg') || '#000';
+const GRID = cssColor('--grid') || '#222';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#board')!;
 const ctx = canvas.getContext('2d')!;
@@ -169,9 +176,10 @@ let cell = 1;
 function fit(): void {
   const dpr = window.devicePixelRatio || 1;
   const box = well.getBoundingClientRect();
-  // Leave room for the 1px outline on every side, plus a device pixel for snapping
+  // Leave room for the frame (page.css) on every side, plus a device pixel for snapping
   // below, so .well never clips it.
-  const margin = 2 + 2 / dpr;
+  const frame = parseFloat(getComputedStyle(canvas).outlineWidth) || 0;
+  const margin = 2 * frame + 2 / dpr;
   const f = fitBoard(box.width - margin, box.height - margin, COLS, ROWS, dpr);
   cell = f.deviceCell;
   canvas.width = f.pxWidth;
@@ -182,9 +190,9 @@ function fit(): void {
   const snap = (v: number) => Math.round(v * dpr) / dpr;
   canvas.style.left = `${snap(box.left + (box.width - f.cssWidth) / 2) - box.left}px`;
   canvas.style.top = `${snap(box.top + (box.height - f.cssHeight) / 2) - box.top}px`;
-  const next = nextCanvas.getBoundingClientRect();
-  nextCanvas.width = Math.round(next.width * dpr);
-  nextCanvas.height = Math.round(next.height * dpr);
+  // Inside the box's border, which the backing store doesn't cover.
+  nextCanvas.width = Math.round(nextCanvas.clientWidth * dpr);
+  nextCanvas.height = Math.round(nextCanvas.clientHeight * dpr);
   render();
 }
 
@@ -438,10 +446,19 @@ function drawCell(
   ox = 0,
   oy = 0,
 ): void {
-  if (y < 0) return;
-  const gap = Math.max(1, Math.round(size / 30));
-  c.fillStyle = COLORS[color] ?? '#fff';
-  c.fillRect(ox + x * size + gap, oy + y * size + gap, size - 2 * gap, size - 2 * gap);
+  const colors = BLOCKS[color - 1];
+  const kind = KINDS[color - 1];
+  if (y < 0 || !colors || !kind) return;
+  drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind]);
+}
+
+/** The empty well: background and faint grid lines on the cell edges. */
+function drawWell(): void {
+  ctx.fillStyle = WELL_BG;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = GRID;
+  for (let x = 1; x < COLS; x++) ctx.fillRect(x * cell, 0, 1, canvas.height);
+  for (let y = 1; y < ROWS; y++) ctx.fillRect(0, y * cell, canvas.width, 1);
 }
 
 /** The next piece, centred in its preview box. */
@@ -456,7 +473,8 @@ function renderNext(kind: Kind | null): void {
   const minY = Math.min(...ys);
   const w = Math.max(...xs) - minX + 1;
   const h = Math.max(...ys) - minY + 1;
-  const size = Math.floor(Math.min(width / 4, height / 2));
+  // Room for a 4×2 piece plus a margin all round.
+  const size = Math.floor(Math.min(width / 5, height / 3));
   const ox = Math.floor((width - w * size) / 2) - minX * size;
   const oy = Math.floor((height - h * size) / 2) - minY * size;
   for (const [x, y] of cells) drawCell(nextCtx, size, x, y, colorIndex(kind), ox, oy);
@@ -509,8 +527,7 @@ function setHidden(id: string, hidden: boolean): void {
 }
 
 function render(): void {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawWell();
   renderOverlay();
   // The game in play, or the finished one under its result.
   const game = session?.game ?? (screen === 'result' ? result?.game : null) ?? null;
