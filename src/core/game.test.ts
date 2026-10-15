@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, Game, ROWS } from './game.ts';
 import { MODES } from './modes/index.ts';
-import { KINDS, cellsOf, makeBag, makeRng } from './pieces.ts';
+import { KINDS, PieceBag, cellsOf } from './pieces.ts';
 
 describe('pieces', () => {
   it('every kind has 4 cells in every rotation', () => {
@@ -13,8 +13,8 @@ describe('pieces', () => {
   });
 
   it('7-bag deals each kind once per 7 draws', () => {
-    const draw = makeBag(makeRng(1));
-    const seen = Array.from({ length: 7 }, draw).sort();
+    const bag = new PieceBag(1);
+    const seen = Array.from({ length: 7 }, () => bag.next()).sort();
     expect(seen).toEqual([...KINDS].sort());
   });
 });

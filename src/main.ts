@@ -6,6 +6,7 @@ import { fitBoard } from './ui/fit.ts';
 import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { keyAction } from './ui/keys.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
+import { clearSave, loadSave, writeSave } from './ui/save.ts';
 
 const COLORS = ['#000', '#0ff', '#ff0', '#a0f', '#0f0', '#f00', '#00f', '#f80'];
 
@@ -19,6 +20,8 @@ const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 const overlay = document.querySelector<HTMLElement>('#overlay')!;
 const pauseMenu = document.querySelector<HTMLElement>('#pause-menu')!;
 const resumeBtn = document.querySelector<HTMLButtonElement>('#resume')!;
+const resumePrompt = document.querySelector<HTMLElement>('#resume-prompt')!;
+const resumeSavedBtn = document.querySelector<HTMLButtonElement>('#resume-saved')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -28,6 +31,25 @@ function setText(id: string, text: string): void {
 }
 
 let session: Session | null = null;
+/** Reading `localStorage` itself throws where storage is blocked; save.ts catches that. */
+const storage = () => window.localStorage;
+/** An unfinished game from before a reload, offered until the player resumes or discards it. */
+let saved: Game | null = loadSave(storage);
+/** The game's lock count at its last save. */
+let savedLocks = 0;
+
+/** Save the game in progress (on every lock and on pause), or clear the save once it's over. */
+function persist(): void {
+  if (!session) return;
+  writeSave(storage, session.game);
+  savedLocks = session.game.locks;
+}
+
+/** Save if a piece locked since the last save. */
+function persistOnLock(): void {
+  if (session && session.game.locks !== savedLocks) persist();
+}
+
 /** Board cell edge in canvas (device) pixels; set by fit(). */
 let cell = 1;
 
@@ -77,9 +99,28 @@ function watchPixelRatio(): void {
 
 function start(): void {
   const mode = MODES[modeSelect.value] ?? MODES.classic!;
+  saved = null;
   session = new Session(new Game(mode), performance.now());
+  persist();
   setText('#status', mode.name);
   startBtn.blur();
+}
+
+/** Continue the game saved before a reload, paused: Resume counts down as usual. */
+function resumeSaved(): void {
+  if (!saved) return;
+  modeSelect.value = saved.state.mode.id;
+  session = new Session(saved, performance.now());
+  session.pause();
+  savedLocks = session.game.locks;
+  saved = null;
+}
+
+function discardSaved(): void {
+  saved = null;
+  clearSave(storage);
+  startBtn.disabled = false;
+  startBtn.focus();
 }
 
 /** A new game from the pause menu: it gets the 3-2-1 countdown, like Resume. */
@@ -92,6 +133,7 @@ function restart(): void {
 /** Back to the title state: no game. */
 function quit(): void {
   session = null;
+  clearSave(storage);
   stopRepeat();
   gestures.cancel();
   setText('#status', '');
@@ -102,6 +144,7 @@ function quit(): void {
 function pause(): void {
   if (!session) return;
   session.pause();
+  persist();
   stopRepeat();
   gestures.cancel();
   touchId = null;
@@ -140,18 +183,24 @@ function renderNext(kind: Kind | null): void {
   for (const [x, y] of cells) drawCell(nextCtx, size, x, y, colorIndex(kind), ox, oy);
 }
 
-/** Show the pause menu or the countdown over the board, or neither. */
+/** Show a menu, handing keyboard focus to `first`, or hide it and take focus back. */
+function showMenu(menu: HTMLElement, show: boolean, first: HTMLElement): void {
+  if (menu.hidden !== show) return;
+  menu.hidden = !show;
+  if (show) first.focus();
+  else if (menu.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+}
+
+/** Show the resume offer, the pause menu or the countdown over the board, or none. */
 function renderOverlay(): void {
   const phase = session?.phase ?? 'running';
-  if (overlay.hidden !== (phase === 'running')) overlay.hidden = phase === 'running';
-  const menu = phase === 'paused';
-  if (pauseMenu.hidden === menu) {
-    pauseMenu.hidden = !menu;
-    // Hand keyboard focus to Resume, and take it back when the menu goes.
-    if (menu) resumeBtn.focus();
-    else if (pauseMenu.contains(document.activeElement))
-      (document.activeElement as HTMLElement).blur();
-  }
+  const offer = !session && saved !== null;
+  const shown = offer || phase !== 'running';
+  if (overlay.hidden === shown) overlay.hidden = !shown;
+  // Start would overwrite the offered game, so the player answers the offer first.
+  if (startBtn.disabled !== offer) startBtn.disabled = offer;
+  showMenu(resumePrompt, offer, resumeSavedBtn);
+  showMenu(pauseMenu, phase === 'paused', resumeBtn);
   setText('#countdown', phase === 'countdown' ? String(session!.countdown(performance.now())) : '');
 }
 
@@ -191,6 +240,7 @@ function render(): void {
 
 function loop(now: number): void {
   session?.tick(now);
+  persistOnLock();
   render();
   requestAnimationFrame(loop);
 }
@@ -206,6 +256,7 @@ function act(action: Action): void {
     return;
   }
   session.act(action, performance.now());
+  persistOnLock();
 }
 
 document.addEventListener('keydown', (e) => {
@@ -225,6 +276,8 @@ onLeaveScreen(document, window, pause);
 resumeBtn.addEventListener('click', () => session?.resume(performance.now()));
 document.querySelector('#restart')!.addEventListener('click', restart);
 document.querySelector('#quit')!.addEventListener('click', quit);
+resumeSavedBtn.addEventListener('click', resumeSaved);
+document.querySelector('#discard-saved')!.addEventListener('click', discardSaved);
 
 // Board gestures follow the primary pointer only; extra fingers are ignored. A new
 // primary pointer means every earlier one has lifted, so it always starts afresh.
