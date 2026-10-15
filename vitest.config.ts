@@ -20,6 +20,8 @@ export default defineConfig((env) =>
           'supabase/tests/**/*.test.ts',
         ],
         environment: 'node',
+        // CSS loads as an empty module by default; the palette test reads page.css (?raw).
+        css: { include: [/page\.css/] },
       },
     }),
   ),
