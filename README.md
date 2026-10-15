@@ -1,5 +1,7 @@
 # Quadrix
 
+**Play:** https://danhquach.github.io/quadrix/ (deployed from `main`)
+
 Falling-block puzzle game for the browser. Two modes:
 
 - **Classic**: standard rules. 10x20 board, 7-bag randomizer, line clears score 100/300/500/800 x level, level up every 10 lines.
