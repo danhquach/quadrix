@@ -309,6 +309,53 @@ p {
 .rung-list .locked .stars {
   color: var(--muted);
 }
+/* Settings: scrolls inside the well on short screens, like cloud save. */
+.settings {
+  box-sizing: border-box;
+  width: min(100%, 22em);
+  max-height: 100%;
+  padding: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.setting.check {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+}
+.setting output {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.settings-head {
+  color: var(--muted);
+}
+.set-keys {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 12px;
+}
+.set-keys button {
+  min-width: 6em;
+}
+.set-keys button[aria-pressed='true'] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.settings-note {
+  text-align: center;
+  color: var(--accent);
+}
+.settings-note:empty {
+  display: none;
+}
 /* Cloud save: scrolls inside the well on short screens. */
 .cloud {
   box-sizing: border-box;

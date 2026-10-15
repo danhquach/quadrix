@@ -1,5 +1,5 @@
 import { ROWS } from '../core/game.ts';
-import { actionForKey } from './keys.ts';
+import { DEFAULT_KEYS, actionForKey, type KeyMap } from './keys.ts';
 
 /** The moves that repeat while their key is held. */
 export type RepeatMove = 'left' | 'right' | 'softDrop';
@@ -19,8 +19,12 @@ export const REPEAT_TIMING: RepeatTiming = { delayMs: 167, intervalMs: 33, softD
 const MAX_PER_TICK = ROWS;
 
 /** The repeating move a key (KeyboardEvent.key) holds, or null. Keys held with Ctrl, Cmd or Alt never repeat. */
-export function heldMove(key: string, modified: boolean): RepeatMove | null {
-  const action = actionForKey(key);
+export function heldMove(
+  key: string,
+  modified: boolean,
+  keys: KeyMap = DEFAULT_KEYS,
+): RepeatMove | null {
+  const action = actionForKey(key, keys);
   return !modified && (action === 'left' || action === 'right' || action === 'softDrop')
     ? action
     : null;
@@ -40,9 +44,14 @@ export class KeyRepeat {
   private sideAt: number | null = null;
   private downAt: number | null = null;
 
-  private readonly timing: RepeatTiming;
+  private timing: RepeatTiming;
 
   constructor(timing: RepeatTiming = REPEAT_TIMING) {
+    this.timing = timing;
+  }
+
+  /** New timing (Settings). Repeats already due keep their time; the next ones use it. */
+  setTiming(timing: RepeatTiming): void {
     this.timing = timing;
   }
 

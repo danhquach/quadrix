@@ -1,4 +1,5 @@
 import type { Action } from './gestures.ts';
+import { DEFAULT_KEYS, keyLabel, type KeyMap } from './keys.ts';
 
 /** The parts of Web Storage the guide uses; `localStorage` in the app, a stub in tests. */
 export type GuideStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -13,29 +14,21 @@ export interface GuideRow {
   readonly text: string;
 }
 
-/** The keyboard controls, in the order the guide lists them. Shown as text only. */
-export const GUIDE_ROWS: readonly GuideRow[] = [
-  {
-    keys: [
-      { label: '←', key: 'ArrowLeft' },
-      { label: '→', key: 'ArrowRight' },
-    ],
-    action: 'left',
-    text: 'Move',
-  },
-  { keys: [{ label: '↑', key: 'ArrowUp' }], action: 'rotate', text: 'Rotate' },
-  { keys: [{ label: '↓', key: 'ArrowDown' }], action: 'softDrop', text: 'Soft drop' },
-  { keys: [{ label: 'Space', key: ' ' }], action: 'hardDrop', text: 'Hard drop' },
-  {
-    keys: [
-      { label: 'P', key: 'p' },
-      { label: 'Esc', key: 'Escape' },
-    ],
-    action: 'pause',
-    text: 'Pause',
-  },
-  { keys: [{ label: '?', key: '?' }], action: 'guide', text: 'Show or hide controls' },
-];
+/** The keyboard controls for `keys`, in the order the guide lists them. Shown as text only. */
+export function guideRows(keys: KeyMap): readonly GuideRow[] {
+  const bound = (action: Action) => ({ label: keyLabel(keys[action]), key: keys[action] });
+  return [
+    { keys: [bound('left'), bound('right')], action: 'left', text: 'Move' },
+    { keys: [bound('rotate')], action: 'rotate', text: 'Rotate' },
+    { keys: [bound('softDrop')], action: 'softDrop', text: 'Soft drop' },
+    { keys: [bound('hardDrop')], action: 'hardDrop', text: 'Hard drop' },
+    { keys: [bound('pause'), { label: 'Esc', key: 'Escape' }], action: 'pause', text: 'Pause' },
+    { keys: [{ label: '?', key: '?' }], action: 'guide', text: 'Show or hide controls' },
+  ];
+}
+
+/** The default keyboard controls. */
+export const GUIDE_ROWS = guideRows(DEFAULT_KEYS);
 
 /** Whether a keydown toggles the guide: `?` (Shift is part of typing it), without Ctrl, Cmd or Alt. */
 export function isGuideKey(key: string, modified: boolean): boolean {
