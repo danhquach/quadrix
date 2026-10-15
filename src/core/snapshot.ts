@@ -1,9 +1,11 @@
 import { COLS, Game, ROWS, type Piece } from './game.ts';
+import { MAX_RUNGS, rung } from './ladder.ts';
 import { MODES } from './modes/index.ts';
+import { classic } from './modes/classic.ts';
 import { KINDS, type Kind } from './pieces.ts';
 
 /** Bump when the format changes; older snapshots are then discarded, not migrated. */
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 /** Longest snapshot text accepted. A real one is well under 1 KB. */
 export const MAX_SNAPSHOT_CHARS = 4096;
@@ -23,6 +25,8 @@ export interface Snapshot {
   level: number;
   rng: number;
   bag: Kind[];
+  pieces: number;
+  rung: number | null;
 }
 
 /** The snapshot of a game in progress, as JSON text. */
@@ -35,7 +39,9 @@ export function toSnapshot(game: Game): string {
 /**
  * The game a snapshot describes, or null if the text is not a valid current-version
  * snapshot. Everything read is untrusted: exact key sets, types, ranges and board size
- * are checked, and the piece must fit the board.
+ * are checked, the piece must fit the board, and the board must hold exactly the cells its
+ * pieces and lines leave. A ladder rung must be a Classic game
+ * short of its goal, on the rung's start level or the one its lines give if higher.
  */
 export function fromSnapshot(text: string): Game | null {
   if (text.length > MAX_SNAPSHOT_CHARS) return null;
@@ -61,12 +67,25 @@ export function fromSnapshot(text: string): Game | null {
     !isInt(s.score, 0, MAX_COUNT) ||
     !isInt(s.lines, 0, MAX_COUNT) ||
     !isInt(s.level, 1, MAX_COUNT) ||
-    s.level !== mode.levelForLines(s.lines) ||
     !isInt(s.rng, 0, 0xffffffff) ||
-    !isBag(s.bag)
+    !isBag(s.bag) ||
+    !isInt(s.pieces, 0, MAX_COUNT) ||
+    !(s.rung === null || isInt(s.rung, 1, MAX_RUNGS))
   ) {
     return null;
   }
+  let startCells = 0;
+  if (s.rung === null) {
+    if (s.level !== mode.levelForLines(s.lines)) return null;
+  } else {
+    const r = rung(s.rung);
+    if (mode !== classic || s.lines >= r.goalLines) return null;
+    if (s.level !== Math.max(r.startLevel, mode.levelForLines(s.lines))) return null;
+    startCells = filled(r.board);
+  }
+  // Every lock adds 4 cells and every cleared line takes 10, so the board, piece count and
+  // lines must agree exactly: a save can't claim fewer pieces (more stars) than it used.
+  if (filled(s.board) !== startCells + 4 * s.pieces - COLS * s.lines) return null;
   const game = new Game(mode, {
     board: s.board,
     piece: { kind: piece.kind, rot: piece.rot, x: piece.x, y: piece.y },
@@ -75,6 +94,8 @@ export function fromSnapshot(text: string): Game | null {
     lines: s.lines,
     level: s.level,
     bag: { rng: s.rng, bag: s.bag },
+    pieces: s.pieces,
+    rung: s.rung,
   });
   return game.fits(game.state.piece) ? game : null;
 }
@@ -90,6 +111,8 @@ const SNAPSHOT_KEYS = [
   'level',
   'rng',
   'bag',
+  'pieces',
+  'rung',
 ] as const;
 const PIECE_KEYS = ['kind', 'rot', 'x', 'y'] as const;
 
@@ -106,6 +129,10 @@ function record<K extends string>(v: unknown, keys: readonly K[]): Record<K, unk
     return null;
   }
   return v as Record<K, unknown>;
+}
+
+function filled(board: number[][]): number {
+  return board.reduce((n, row) => n + row.filter((c) => c !== 0).length, 0);
 }
 
 function isInt(v: unknown, min: number, max: number): v is number {

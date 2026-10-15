@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, Game, ROWS } from './game.ts';
+import { MAX_RUNGS, rung, startRung } from './ladder.ts';
 import { MODES } from './modes/index.ts';
 import {
   MAX_COUNT,
@@ -178,3 +179,96 @@ function withCell(s: Record<string, unknown>, value: unknown): unknown[][] {
 function piece(s: Record<string, unknown>): Record<string, unknown> {
   return s.piece as Record<string, unknown>;
 }
+
+describe('snapshot of a ladder rung', () => {
+  /** Rung `n` a few pieces in, short of its goal. */
+  function rungPlayed(n = 16, drops = 5): Game {
+    const g = startRung(rung(n));
+    for (let i = 0; i < drops; i++) {
+      g.move((i % 5) - 2);
+      g.hardDrop();
+    }
+    return g;
+  }
+  const rungValid = () => JSON.parse(toSnapshot(rungPlayed())) as Record<string, unknown>;
+
+  it('resumes as the same rung, pieces locked included', () => {
+    for (const n of [1, 16, 1_000, MAX_RUNGS]) {
+      const g = rungPlayed(n);
+      const r = fromSnapshot(toSnapshot(g))!;
+      expect(r).not.toBeNull();
+      expect(r.rung).toBe(n);
+      expect(r.locks).toBe(g.locks);
+      expect(r.state.level).toBe(rung(n).startLevel);
+      expect(r.save()).toEqual(g.save());
+      expect(playOut(r, 20)).toEqual(playOut(g, 20));
+    }
+  });
+
+  it('keeps the lock count of a free game too', () => {
+    const g = played();
+    expect(g.locks).toBeGreaterThan(0);
+    expect(fromSnapshot(toSnapshot(g))!.locks).toBe(g.locks);
+    expect(fromSnapshot(toSnapshot(g))!.rung).toBeNull();
+  });
+
+  it('accepts a rung with lines cleared, as long as the goal is not met', () => {
+    // 10 more lines took 25 more pieces (4 cells each, 10 a line), leaving the board as is.
+    const s = rungValid();
+    expect(s.lines).toBe(0);
+    const ten = { ...s, lines: 10, pieces: (s.pieces as number) + 25 };
+    expect(rung(16).goalLines).toBeGreaterThan(10);
+    expect(parse(ten)).not.toBeNull();
+  });
+
+  it('rejects a save whose board, pieces and lines disagree (forged stars)', () => {
+    const s = rungValid();
+    const pieces = s.pieces as number;
+    expect(parse({ ...s, pieces: pieces - 1 })).toBeNull();
+    expect(parse({ ...s, pieces: 0 })).toBeNull();
+    expect(parse({ ...s, pieces: pieces + 1 })).toBeNull();
+    expect(parse({ ...s, lines: 1 })).toBeNull();
+    expect(parse({ ...valid(), pieces: (valid().pieces as number) - 1 })).toBeNull();
+    // A free game claims no garbage: the rung's start cells don't count for it.
+    expect(parse({ ...s, rung: null, level: 1 })).toBeNull();
+  });
+
+  const cases: [string, (s: Record<string, unknown>) => unknown][] = [
+    ['rung 0', (s) => ({ ...s, rung: 0 })],
+    ['rung negative', (s) => ({ ...s, rung: -1 })],
+    ['rung over the cap', (s) => ({ ...s, rung: MAX_RUNGS + 1 })],
+    ['rung unsafe', (s) => ({ ...s, rung: 2 ** 60 })],
+    ['rung fractional', (s) => ({ ...s, rung: 1.5 })],
+    ['rung as string', (s) => ({ ...s, rung: '16' })],
+    ['rung as object', (s) => ({ ...s, rung: { valueOf: 16 } })],
+    ['rung missing', (s) => ({ ...s, rung: undefined })],
+    ['rung as boolean', (s) => ({ ...s, rung: true })],
+    ['pieces as boolean', (s) => ({ ...s, pieces: true })],
+    ['rung in another mode', (s) => ({ ...s, mode: 'override' })],
+    ['rung goal already met', (s) => ({ ...s, lines: rung(16).goalLines })],
+    ['rung level below its start', (s) => ({ ...s, level: rung(16).startLevel - 1 })],
+    ['rung level above its start', (s) => ({ ...s, level: rung(16).startLevel + 1 })],
+    ['level of a free game on a rung', (s) => ({ ...s, rung: null })],
+    ['pieces negative', (s) => ({ ...s, pieces: -1 })],
+    ['pieces over the cap', (s) => ({ ...s, pieces: MAX_COUNT + 1 })],
+    ['pieces fractional', (s) => ({ ...s, pieces: 0.5 })],
+    ['pieces as string', (s) => ({ ...s, pieces: '3' })],
+    ['pieces missing', (s) => ({ ...s, pieces: undefined })],
+  ];
+
+  it.each(cases)('rejects %s', (_name, mutate) => {
+    expect(parse(mutate(rungValid()))).toBeNull();
+  });
+
+  it('accepts the unmodified rung snapshot', () => {
+    expect(parse(rungValid())).not.toBeNull();
+  });
+
+  it('rejects a version 1 snapshot, which had no rung or piece count', () => {
+    const old = valid();
+    delete old.rung;
+    delete old.pieces;
+    expect(parse({ ...old, v: 1 })).toBeNull();
+    expect(SNAPSHOT_VERSION).toBe(2);
+  });
+});

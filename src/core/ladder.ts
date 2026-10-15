@@ -5,6 +5,9 @@ import { KINDS, PieceBag, mulberry32 } from './pieces.ts';
 /** Fixed seed of the one ladder every player climbs. Changing it changes every rung. */
 export const LADDER_SEED = 0x51a3d0c6;
 
+/** Highest rung a player can reach: far beyond play, and keeps the profile's stars text small. */
+export const MAX_RUNGS = 100_000;
+
 /** Most garbage rows a rung starts with; leaves the top of the board free to spawn and play. */
 export const MAX_GARBAGE_ROWS = 8;
 
@@ -27,7 +30,9 @@ export interface Rung {
 export type RungOutcome = 'playing' | 'passed' | 'failed';
 
 /**
- * Rung `index` (a positive safe integer). Difficulty grows with each doubling of the
+ * Rung `index` (a positive safe integer). Saved games are checked against it (see
+ * snapshot.ts), so changing the formula or LADDER_SEED discards rungs in progress.
+ * Difficulty grows with each doubling of the
  * index and never stops: goal and starting level rise forever, garbage up to its cap.
  */
 export function rung(index: number): Rung {
@@ -78,6 +83,8 @@ export function startRung(r: Rung): Game {
     lines: 0,
     level: r.startLevel,
     bag: bag.save(),
+    pieces: 0,
+    rung: r.index,
   };
   return new Game(classic, start);
 }

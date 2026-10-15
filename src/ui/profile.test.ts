@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { PROFILE_VERSION, newProfile, recordGame, rename, toProfileText } from '../core/profile.ts';
+import {
+  PROFILE_VERSION,
+  highestRung,
+  newProfile,
+  recordGame,
+  recordRung,
+  rename,
+  toProfileText,
+} from '../core/profile.ts';
 import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './profile.ts';
 import type { SaveStorage } from './save.ts';
 
@@ -32,6 +40,25 @@ describe('profile storage', () => {
     writeProfile(() => store, p);
     expect(store.data.get(PROFILE_KEY)).toBe(toProfileText(p));
     expect(loadProfile(() => store)).toEqual({ profile: p, stored: true });
+  });
+
+  it('keeps a passed rung, its unlock and its best stars across a reload', () => {
+    const store = memory();
+    let p = newProfile();
+    p = updateProfile(
+      () => store,
+      p,
+      (q) => recordRung(q, 1, 2),
+    );
+    // A worse retry keeps the better stars.
+    updateProfile(
+      () => store,
+      p,
+      (q) => recordRung(q, 1, 1),
+    );
+    const reloaded = loadProfile(() => store).profile;
+    expect(highestRung(reloaded)).toBe(2);
+    expect(reloaded.stars).toBe('2');
   });
 
   it('gives a new, storable profile on first launch or when the stored one is corrupt', () => {

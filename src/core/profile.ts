@@ -1,3 +1,4 @@
+import { MAX_RUNGS } from './ladder.ts';
 import { MODES } from './modes/index.ts';
 import { MAX_COUNT } from './snapshot.ts';
 
@@ -9,8 +10,7 @@ export const DEFAULT_NAME = 'Player';
 /** Longest name, in code points, after cleaning. */
 export const MAX_NAME_LENGTH = 16;
 
-/** Most rungs a profile records stars for: far beyond play, and keeps the stored text small. */
-export const MAX_RUNGS = 100_000;
+export { MAX_RUNGS };
 
 /** Longest profile text accepted: the stars string at its cap plus room for everything else. */
 export const MAX_PROFILE_CHARS = MAX_RUNGS + 4096;
@@ -79,18 +79,23 @@ export function rename(p: Profile, raw: string): Profile {
   return { ...p, name: cleanName(raw) };
 }
 
-/** Count a finished (or abandoned) game in `mode`. Unknown modes are ignored. */
-export function recordGame(p: Profile, mode: string, score: number, lines: number): Profile {
-  if (!Object.hasOwn(MODES, mode)) return p;
-  const prev = p.best[mode]!;
+/**
+ * Count a finished (or abandoned) game in `mode`. Unknown modes are ignored. A ladder
+ * rung (mode null) counts toward the totals but not a mode's bests: its higher start
+ * level and garbage make its score unlike a free game's.
+ */
+export function recordGame(p: Profile, mode: string | null, score: number, lines: number): Profile {
+  if (mode !== null && !Object.hasOwn(MODES, mode)) return p;
   score = readCount(score);
   lines = readCount(lines);
+  const best = { ...p.best };
+  if (mode !== null) {
+    const prev = best[mode]!;
+    best[mode] = { score: Math.max(prev.score, score), lines: Math.max(prev.lines, lines) };
+  }
   return {
     ...p,
-    best: {
-      ...p.best,
-      [mode]: { score: Math.max(prev.score, score), lines: Math.max(prev.lines, lines) },
-    },
+    best,
     gamesPlayed: add(p.gamesPlayed, 1),
     totalLines: add(p.totalLines, lines),
   };

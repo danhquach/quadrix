@@ -31,11 +31,17 @@ export interface SavedGame {
   lines: number;
   level: number;
   bag: BagState;
+  /** Pieces locked so far. */
+  pieces: number;
+  /** The ladder rung this game plays, or null for a free game. */
+  rung: number | null;
 }
 
 /** Pure engine: every action takes a state and mutates only that state. No DOM, no timers. */
 export class Game {
   readonly state: GameState;
+  /** The ladder rung this game plays, or null for a free game. */
+  readonly rung: number | null = null;
   private readonly bag: PieceBag;
   private lockCount = 0;
 
@@ -53,6 +59,8 @@ export class Game {
         level: from.level,
         over: false,
       };
+      this.lockCount = from.pieces;
+      this.rung = from.rung;
       return;
     }
     this.bag = new PieceBag(from);
@@ -69,7 +77,7 @@ export class Game {
     };
   }
 
-  /** Pieces locked since this object was made; lets the UI save after each lock. */
+  /** Pieces locked in this game, a save's included; lets the UI save after each lock. */
   get locks(): number {
     return this.lockCount;
   }
@@ -85,6 +93,8 @@ export class Game {
       lines: s.lines,
       level: s.level,
       bag: this.bag.save(),
+      pieces: this.lockCount,
+      rung: this.rung,
     };
   }
 

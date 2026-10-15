@@ -109,14 +109,16 @@ p {
   outline: 1px solid #444;
 }
 /* Paused or counting down: an opaque cover over the whole well, so the board
-   can't be studied while the clock is stopped. */
+   can't be studied while the clock is stopped. A rung's goal stacks above. */
 .overlay {
   position: absolute;
   inset: 0;
   z-index: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   background: #111;
 }
 .overlay[hidden],
@@ -137,8 +139,88 @@ p {
   min-height: 44px;
   font-size: 1.1rem;
 }
+/* The result screen leaves the final board in sight behind it. */
+.overlay.see-through {
+  background: rgb(17 17 17 / 0.8);
+}
+.goal-text {
+  max-width: 20em;
+  padding: 0 12px;
+  text-align: center;
+}
+.goal-text:empty,
 .countdown:empty {
   display: none;
+}
+.result-stars {
+  text-align: center;
+  font-size: 2rem;
+  color: #fc3;
+}
+.result-detail {
+  text-align: center;
+  color: #bbb;
+}
+/* The ladder fills the well; only its list scrolls (by touch too: the page itself never pans). */
+.ladder {
+  box-sizing: border-box;
+  width: min(100%, 22em);
+  max-height: 100%;
+  padding: 8px;
+}
+.ladder-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.ladder-head button {
+  min-height: 44px;
+}
+.ladder-head #ladder-current {
+  justify-self: end;
+}
+.ladder-head #ladder-back {
+  justify-self: start;
+}
+.rung-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rung-list button {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  touch-action: pan-y;
+}
+.rung-list .pager {
+  justify-content: center;
+}
+.rung-list .stars {
+  color: #fc3;
+}
+.rung-list .current {
+  outline: 2px solid #fc3;
+  outline-offset: -2px;
+  font-weight: bold;
+}
+.rung-list .locked .stars {
+  color: #888;
 }
 .countdown {
   font-size: 4rem;
@@ -216,8 +298,7 @@ p {
   .pad button:active {
     background: #3a3a3a;
   }
-  .controls button,
-  .controls select {
+  .controls button {
     min-height: 44px;
     min-width: 44px;
   }
