@@ -41,6 +41,12 @@ describe('keyAction', () => {
     }
   });
 
+  it('ignores the computer’s auto-repeat for every move, but still swallows it', () => {
+    for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ']) {
+      expect(keyAction(key, 'running', true)).toEqual({ action: null, preventDefault: true });
+    }
+  });
+
   it('ignores every move while paused or counting down', () => {
     for (const phase of ['paused', 'countdown'] as const) {
       for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ']) {

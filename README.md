@@ -64,6 +64,7 @@ To change a mode's rules, implement the `Mode` hooks in its file. If a rule need
 ## Controls
 
 - Keyboard: ← → move · ↑ rotate · ↓ soft drop · Space hard drop · P / Esc pause · ? controls guide (shown beside the board on the first Start until closed)
+- Held keys: ← → and ↓ repeat on the game's own timing, the same on every computer (the computer's key repeat is ignored): one move on press, then after 167 ms one move every 33 ms. With ← and → both held, the last one pressed wins; releasing it falls back to the other after a fresh delay. A key held through a pause waits a fresh delay when play resumes. ↑ and Space act once per press.
 - Touch, on the board: tap rotate · drag sideways to move one column per cell · drag down to soft drop · flick down to hard drop
 - Touch buttons (touch screens only; ← → ↓ repeat while held): ← → ↓ ⤓ ↻ under the board in portrait, beside it in landscape; Pause sits next to Start
 - Pause: the menu covers the board (Resume, Restart, Quit); Resume and Restart count down 3-2-1 before pieces fall. The game also pauses itself when the tab or app goes to the background, the device locks or the window loses focus.
