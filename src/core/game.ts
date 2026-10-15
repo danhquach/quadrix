@@ -121,10 +121,19 @@ export class Game {
 
   hardDrop(): void {
     if (this.state.over) return;
-    while (this.tryPlace({ ...this.state.piece, y: this.state.piece.y + 1 })) {
-      this.state.score += 2;
-    }
+    const landing = this.ghost();
+    this.state.score += 2 * (landing.y - this.state.piece.y);
+    this.state.piece = landing;
     this.lock();
+  }
+
+  /** Where the falling piece would land if hard-dropped now (the piece itself when resting). */
+  ghost(): Piece {
+    let p = this.state.piece;
+    for (let below = { ...p, y: p.y + 1 }; this.fits(below); below = { ...below, y: below.y + 1 }) {
+      p = below;
+    }
+    return p;
   }
 
   fits(p: Piece): boolean {
