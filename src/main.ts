@@ -31,6 +31,8 @@ const cssColor = (name: string) => theme.getPropertyValue(name).trim();
 const BLOCKS = PIECE_VARS.map((v) => blockColors(cssColor(v)));
 const WELL_BG = cssColor('--well-bg') || '#000';
 const GRID = cssColor('--grid') || '#222';
+/** Opacity of the ghost piece: the falling piece's landing spot. */
+const GHOST_ALPHA = 0.3;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#board')!;
 const ctx = canvas.getContext('2d')!;
@@ -567,9 +569,16 @@ function render(): void {
   s.board.forEach((row, y) => row.forEach((c, x) => c && drawCell(ctx, cell, x, y, c)));
   const live = session !== null && !s.over;
   if (live) {
-    for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
-      drawCell(ctx, cell, s.piece.x + cx, s.piece.y + cy, colorIndex(s.piece.kind));
+    const color = colorIndex(s.piece.kind);
+    const cells = cellsOf(s.piece.kind, s.piece.rot);
+    // The ghost goes under the piece; a resting piece covers it, so skip it there.
+    const ghost = game.ghost();
+    if (ghost.y !== s.piece.y) {
+      ctx.globalAlpha = GHOST_ALPHA;
+      for (const [cx, cy] of cells) drawCell(ctx, cell, ghost.x + cx, ghost.y + cy, color);
+      ctx.globalAlpha = 1;
     }
+    for (const [cx, cy] of cells) drawCell(ctx, cell, s.piece.x + cx, s.piece.y + cy, color);
   }
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
