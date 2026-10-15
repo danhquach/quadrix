@@ -66,6 +66,7 @@ const linkInput = document.querySelector<HTMLInputElement>('#link-input')!;
 const linkSubmit = document.querySelector<HTMLButtonElement>('#link-submit')!;
 const guidePanel = document.querySelector<HTMLElement>('#guide')!;
 const guideToggle = document.querySelector<HTMLButtonElement>('#guide-toggle')!;
+const awardText = document.querySelector<HTMLElement>('#award')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -302,6 +303,7 @@ function quit(): void {
 /** End the game in play once it's decided (rung passed or failed, game over); else save on lock. */
 function settle(): void {
   if (!session) return;
+  showAward();
   const game = session.game;
   const outcome = rungNow
     ? rungOutcome(rungNow, game.state)
@@ -584,6 +586,26 @@ function render(): void {
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
+}
+
+/** The game and lock count whose award last showed, so each lock shows once. */
+let awardGame: Game | null = null;
+let awardLocks = 0;
+
+/** Flash what the last lock scored ("Quad", "Combo 2") over the board, once per lock. */
+function showAward(): void {
+  const game = session?.game;
+  if (!game) return;
+  const fresh = game === awardGame && game.locks !== awardLocks;
+  awardGame = game;
+  awardLocks = game.locks;
+  const labels = game.award?.labels ?? [];
+  if (!fresh || labels.length === 0) return;
+  awardText.textContent = labels.join('\n');
+  // Restart the fade, even when the same label shows again.
+  awardText.classList.remove('show');
+  void awardText.offsetWidth;
+  awardText.classList.add('show');
 }
 
 function loop(now: number): void {

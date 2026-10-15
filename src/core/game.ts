@@ -1,5 +1,6 @@
 import { PieceBag, cellsOf, colorIndex, type BagState, type Kind } from './pieces.ts';
 import type { Mode } from './modes/index.ts';
+import { scoreLock, type Award, type Chain, type Spin } from './scoring.ts';
 
 export const COLS = 10;
 export const ROWS = 20;
@@ -35,6 +36,12 @@ export interface SavedGame {
   pieces: number;
   /** The ladder rung this game plays, or null for a free game. */
   rung: number | null;
+  /** Drops in a row that cleared lines. */
+  streak: number;
+  /** Whether the last clear was a quad or a spin clear. */
+  b2b: boolean;
+  /** Whether the falling piece's last move was a rotation. */
+  spun: boolean;
 }
 
 /** Pure engine: every action takes a state and mutates only that state. No DOM, no timers. */
@@ -44,6 +51,11 @@ export class Game {
   readonly rung: number | null = null;
   private readonly bag: PieceBag;
   private lockCount = 0;
+  private streak = 0;
+  private b2b = false;
+  /** The falling piece's last successful move was a rotation (for spin detection). */
+  private spun = false;
+  private lastAward: Award | null = null;
 
   /** A new game from `seed`, or one continued from a save (trusted: validate it first). */
   constructor(mode: Mode, from: number | SavedGame = Date.now()) {
@@ -61,6 +73,9 @@ export class Game {
       };
       this.lockCount = from.pieces;
       this.rung = from.rung;
+      this.streak = from.streak;
+      this.b2b = from.b2b;
+      this.spun = from.spun;
       return;
     }
     this.bag = new PieceBag(from);
@@ -82,6 +97,15 @@ export class Game {
     return this.lockCount;
   }
 
+  private chain(): Chain {
+    return { streak: this.streak, b2b: this.b2b };
+  }
+
+  /** What the last lock scored and why, or null before the first lock. */
+  get award(): Award | null {
+    return this.lastAward;
+  }
+
   /** A copy of the state to continue this game later. Meaningless once the game is over. */
   save(): SavedGame {
     const s = this.state;
@@ -95,25 +119,31 @@ export class Game {
       bag: this.bag.save(),
       pieces: this.lockCount,
       rung: this.rung,
+      streak: this.streak,
+      b2b: this.b2b,
+      spun: this.spun,
     };
   }
 
   move(dx: number): boolean {
-    return this.tryPlace({ ...this.state.piece, x: this.state.piece.x + dx });
+    return this.shift({ ...this.state.piece, x: this.state.piece.x + dx });
   }
 
   /** Rotate clockwise with a simple wall kick (try 0, -1, +1, -2, +2). */
   rotate(): boolean {
     const p = this.state.piece;
     for (const kick of [0, -1, 1, -2, 2]) {
-      if (this.tryPlace({ ...p, rot: (p.rot + 1) % 4, x: p.x + kick })) return true;
+      if (this.tryPlace({ ...p, rot: (p.rot + 1) % 4, x: p.x + kick })) {
+        this.spun = true;
+        return true;
+      }
     }
     return false;
   }
 
   /** One gravity step. Returns false when the piece rests on the stack; it never locks. */
   step(): boolean {
-    return this.tryPlace({ ...this.state.piece, y: this.state.piece.y + 1 });
+    return this.shift({ ...this.state.piece, y: this.state.piece.y + 1 });
   }
 
   /** Whether the piece rests on the floor or the stack (one row down would not fit). */
@@ -126,6 +156,7 @@ export class Game {
     if (this.state.over) return;
     const landing = this.ghost();
     this.state.score += 2 * (landing.y - this.state.piece.y);
+    if (landing.y !== this.state.piece.y) this.spun = false;
     this.state.piece = landing;
     this.lock();
   }
@@ -147,6 +178,13 @@ export class Game {
     });
   }
 
+  /** Move without rotating: a successful one ends any spin. */
+  private shift(p: Piece): boolean {
+    if (!this.tryPlace(p)) return false;
+    this.spun = false;
+    return true;
+  }
+
   private tryPlace(p: Piece): boolean {
     if (this.state.over || !this.fits(p)) return false;
     this.state.piece = p;
@@ -158,6 +196,10 @@ export class Game {
     const s = this.state;
     if (s.over) return;
     this.lockCount++;
+    // A lock-out scores nothing: don't leave the previous lock's award in place.
+    this.lastAward = null;
+    const spin = this.spun ? tSpin(s.board, s.piece) : 'none';
+    this.spun = false;
     const color = colorIndex(s.piece.kind);
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
       const y = s.piece.y + cy;
@@ -168,8 +210,13 @@ export class Game {
       s.board[y]![s.piece.x + cx] = color;
     }
     const cleared = this.clearLines();
+    const fullClear = cleared > 0 && s.board.every((row) => row.every((c) => c === 0));
+    const award = scoreLock(s.mode, s.level, cleared, spin, this.chain(), fullClear);
+    this.lastAward = award;
+    this.streak = award.streak;
+    this.b2b = award.b2b;
+    s.score += award.points;
     if (cleared > 0) {
-      s.score += s.mode.scoreForLines(cleared, s.level);
       s.lines += cleared;
       // Never below the level the game started on (a ladder rung can start above 1).
       s.level = Math.max(s.level, s.mode.levelForLines(s.lines));
@@ -186,6 +233,30 @@ export class Game {
     this.state.board = kept;
     return cleared;
   }
+}
+
+/** The T piece's corners in its 3x3 box, clockwise from top left. */
+const CORNERS = [
+  [0, 0],
+  [2, 0],
+  [2, 2],
+  [0, 2],
+] as const;
+
+/**
+ * How a T piece at `p` sits in `board`: a spin when 3 of the 4 corners around its centre
+ * are filled (walls and floor count), full when both corners it points at are, else mini.
+ */
+export function tSpin(board: number[][], p: Piece): Spin {
+  if (p.kind !== 'T') return 'none';
+  const filled = CORNERS.map(([cx, cy]) => {
+    const x = p.x + cx;
+    const y = p.y + cy;
+    return x < 0 || x >= COLS || y >= ROWS || (y >= 0 && board[y]![x] !== 0);
+  });
+  if (filled.filter(Boolean).length < 3) return 'none';
+  // Rotation r points at corners r and r + 1 (0 points up: top left and top right).
+  return filled[p.rot]! && filled[(p.rot + 1) % 4]! ? 'full' : 'mini';
 }
 
 /** A new piece of `kind` at the spawn position. */

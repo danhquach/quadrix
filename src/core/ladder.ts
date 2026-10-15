@@ -85,6 +85,9 @@ export function startRung(r: Rung): Game {
     bag: bag.save(),
     pieces: 0,
     rung: r.index,
+    streak: 0,
+    b2b: false,
+    spun: false,
   };
   return new Game(classic, start);
 }

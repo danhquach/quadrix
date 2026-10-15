@@ -63,6 +63,9 @@ describe('save', () => {
     const v1 = JSON.parse(toSnapshot(game())) as Record<string, unknown>;
     delete v1.pieces;
     delete v1.rung;
+    delete v1.streak;
+    delete v1.b2b;
+    delete v1.spun;
     const older = [
       toSnapshot(game()).replace(current, `"v":${SNAPSHOT_VERSION - 1}`),
       JSON.stringify({ ...v1, v: 1 }),
