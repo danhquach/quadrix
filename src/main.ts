@@ -14,15 +14,28 @@ import { KINDS, cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { fitBoard } from './ui/fit.ts';
-import { GestureTracker, isAction, type Action } from './ui/gestures.ts';
-import { GUIDE_ROWS, Guide, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
-import { keyAction } from './ui/keys.ts';
+import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
+import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
+import { keyAction, keyLabel } from './ui/keys.ts';
 import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
 import { PlayedGame } from './ui/played.ts';
 import { KeyRepeat, heldMove } from './ui/repeat.ts';
 import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/profile.ts';
 import { clearSave, loadSave, resumable, writeSave } from './ui/save.ts';
+import {
+  ACTION_NAMES,
+  DEFAULT_SETTINGS,
+  DELAY_RANGE,
+  INTERVAL_RANGE,
+  SETTINGS_KEY,
+  bindKey,
+  inRange,
+  loadSettings,
+  repeatTiming,
+  writeSettings,
+  type Settings,
+} from './ui/settings.ts';
 import { MARKS, PIECE_VARS, blockColors, drawBlock } from './ui/skin.ts';
 
 // Colors are defined once, as CSS variables in page.css; the canvases read them here.
@@ -67,6 +80,11 @@ const linkSubmit = document.querySelector<HTMLButtonElement>('#link-submit')!;
 const guidePanel = document.querySelector<HTMLElement>('#guide')!;
 const guideToggle = document.querySelector<HTMLButtonElement>('#guide-toggle')!;
 const awardText = document.querySelector<HTMLElement>('#award')!;
+const openSettingsBtn = document.querySelector<HTMLButtonElement>('#open-settings')!;
+const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
+const ghostInput = document.querySelector<HTMLInputElement>('#set-ghost')!;
+const delayInput = document.querySelector<HTMLInputElement>('#set-delay')!;
+const intervalInput = document.querySelector<HTMLInputElement>('#set-interval')!;
 const $ = (id: string) => document.querySelector<HTMLElement>(id)!;
 
 /** Write text only when it changes, so the status live region is not re-announced every frame. */
@@ -94,6 +112,12 @@ let ladderTopRow = 1;
 const storage = () => window.localStorage;
 /** The game's lock count at its last save. */
 let savedLocks = 0;
+/** The player's options, applied at once and stored on every change. */
+let settings: Settings = loadSettings(storage);
+/** Settings covers the board, over whatever else shows; a game in play stays paused under it. */
+let settingsOpen = false;
+/** The action whose key Settings is waiting for, or null. */
+let binding: Action | null = null;
 
 const loaded = loadProfile(storage);
 /**
@@ -503,22 +527,33 @@ function renderOverlay(): void {
   const phase = session?.phase ?? 'running';
   const offer = !session && saved !== null;
   const idle = !session && !offer;
-  const shown = !session || phase !== 'running';
+  const shown = !session || phase !== 'running' || settingsOpen;
   if (overlay.hidden === shown) overlay.hidden = !shown;
+  showMenu(settingsPanel, settingsOpen, ghostInput);
+  // The other panels wait under Settings until it closes.
+  const under = !settingsOpen;
   // The result leaves the final board in sight.
-  overlay.classList.toggle('see-through', idle && screen === 'result');
-  showMenu(resumePrompt, offer, resumeSavedBtn);
-  showMenu(pauseMenu, phase === 'paused', resumeBtn);
-  showMenu(mainMenu, idle && screen === 'menu', ladderBtn);
+  overlay.classList.toggle('see-through', idle && screen === 'result' && !settingsOpen);
+  showMenu(resumePrompt, under && offer, resumeSavedBtn);
+  showMenu(pauseMenu, under && phase === 'paused', resumeBtn);
+  showMenu(mainMenu, under && idle && screen === 'menu', ladderBtn);
   showMenu(
     ladderPanel,
-    idle && screen === 'ladder',
+    under && idle && screen === 'ladder',
     rungList.querySelector<HTMLElement>('.current') ?? ladderBack,
   );
-  showMenu(resultPanel, idle && screen === 'result', resultNext.hidden ? resultRetry : resultNext);
-  showMenu(cloudPanel, idle && screen === 'cloud', cloudOnBtn.hidden ? cloudLinkBtn : cloudOnBtn);
+  showMenu(
+    resultPanel,
+    under && idle && screen === 'result',
+    resultNext.hidden ? resultRetry : resultNext,
+  );
+  showMenu(
+    cloudPanel,
+    under && idle && screen === 'cloud',
+    cloudOnBtn.hidden ? cloudLinkBtn : cloudOnBtn,
+  );
   setText('#countdown', phase === 'countdown' ? String(session!.countdown(performance.now())) : '');
-  const r = session && phase !== 'running' ? rungNow : null;
+  const r = session && phase !== 'running' && !settingsOpen ? rungNow : null;
   setText(
     '#goal-text',
     r ? `Rung ${r.index}: clear ${r.goalLines} lines · ★★★ within ${r.stars.three} pieces` : '',
@@ -576,7 +611,7 @@ function render(): void {
     const cells = cellsOf(s.piece.kind, s.piece.rot);
     // The ghost goes under the piece; a resting piece covers it, so skip it there.
     const ghost = game.ghost();
-    if (ghost.y !== s.piece.y) {
+    if (settings.ghost && ghost.y !== s.piece.y) {
       ctx.globalAlpha = GHOST_ALPHA;
       for (const [cx, cy] of cells) drawCell(ctx, cell, ghost.x + cx, ghost.y + cy, color);
       ctx.globalAlpha = 1;
@@ -619,11 +654,12 @@ function loop(now: number): void {
 
 const gestures = new GestureTracker();
 /** Held ← → ↓ keys, repeated on the game's own timing. */
-const keyRepeat = new KeyRepeat();
+const keyRepeat = new KeyRepeat(repeatTiming(settings));
 
 /** Apply one player action, whatever its source. */
 function act(action: Action): void {
-  if (!session || session.game.state.over) return;
+  // Under Settings the game stays paused: the Pause button and pad don't reach it.
+  if (!session || session.game.state.over || settingsOpen) return;
   if (action === 'pause') {
     if (session.phase === 'paused') session.resume(performance.now());
     else pause();
@@ -637,6 +673,16 @@ document.addEventListener('keydown', (e) => {
   // Typing a name or link code is not playing: its keys stay in the field.
   if (e.target === nameInput || e.target === linkInput) return;
   guide.keyboardSeen();
+  if (settingsOpen) {
+    settingsKey(e);
+    return;
+  }
+  // Esc on the title screen opens Settings; in a game it pauses.
+  if (e.key === 'Escape' && !session && saved === null && screen === 'menu') {
+    e.preventDefault();
+    if (!e.repeat) openSettings();
+    return;
+  }
   // `?` shows or hides the guide at any time, without moving the piece or pausing.
   if (isGuideKey(e.key, e.ctrlKey || e.metaKey || e.altKey)) {
     e.preventDefault();
@@ -648,21 +694,27 @@ document.addEventListener('keydown', (e) => {
   // macOS drops the keyup of a key released while Cmd is down, so a modifier forgets held keys.
   if (e.key === 'Meta' || e.key === 'Control' || e.key === 'Alt') keyRepeat.clear();
   // Held in any phase, even between games, so a key already down repeats once play starts.
-  const held = heldMove(e.key, modified);
+  const held = heldMove(e.key, modified, settings.keys);
   if (held && !e.repeat) keyRepeat.press(held, performance.now());
   if (!session || session.game.state.over) {
     // A key held through the end of a game must not repeat onto the result's buttons.
     if (e.repeat) e.preventDefault();
     return;
   }
-  const { action, preventDefault } = keyAction(e.key, session.phase, e.repeat, modified);
+  const { action, preventDefault } = keyAction(
+    e.key,
+    session.phase,
+    e.repeat,
+    modified,
+    settings.keys,
+  );
   if (action) act(action);
   if (preventDefault) e.preventDefault();
 });
 
 // Released whatever has focus: a held key must not keep repeating after its keyup.
 document.addEventListener('keyup', (e) => {
-  const held = heldMove(e.key, false);
+  const held = heldMove(e.key, false, settings.keys);
   if (held) keyRepeat.release(held, performance.now());
 });
 
@@ -810,23 +862,26 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
 }
 
-// Keyboard controls guide. Its rows are built as text nodes, never markup.
+// Keyboard controls guide, for the keys bound now. Its rows are built as text nodes, never markup.
 const guide = new Guide(loadGuideClosed(storage), matchMedia('(any-pointer: fine)').matches);
-document.querySelector('#guide-keys')!.replaceChildren(
-  ...GUIDE_ROWS.map((row) => {
-    const div = document.createElement('div');
-    const dt = document.createElement('dt');
-    for (const { label } of row.keys) {
-      const kbd = document.createElement('kbd');
-      kbd.textContent = label;
-      dt.append(kbd);
-    }
-    const dd = document.createElement('dd');
-    dd.textContent = row.text;
-    div.append(dt, dd);
-    return div;
-  }),
-);
+function renderGuideKeys(): void {
+  document.querySelector('#guide-keys')!.replaceChildren(
+    ...guideRows(settings.keys).map((row) => {
+      const div = document.createElement('div');
+      const dt = document.createElement('dt');
+      for (const { label } of row.keys) {
+        const kbd = document.createElement('kbd');
+        kbd.textContent = label;
+        dt.append(kbd);
+      }
+      const dd = document.createElement('dd');
+      dd.textContent = row.text;
+      div.append(dt, dd);
+      return div;
+    }),
+  );
+}
+renderGuideKeys();
 
 function renderGuide(): void {
   if (guidePanel.hidden === guide.visible) guidePanel.hidden = !guide.visible;
@@ -989,6 +1044,146 @@ cloudOffBtn.addEventListener('click', () =>
     return 'Off here. Your progress stays on this device. To rejoin this save, enter a link code from another device.';
   }),
 );
+
+// Settings panel. Every change applies at once and is stored; text reaches the page as text only.
+const keyButtons = new Map<Action, HTMLButtonElement>();
+document.querySelector('#set-keys')!.replaceChildren(
+  ...ACTIONS.flatMap((action) => {
+    const name = document.createElement('span');
+    name.textContent = ACTION_NAMES[action];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      binding = binding === action ? null : action;
+      setText('#settings-note', binding ? 'Press a key. Esc cancels.' : '');
+      renderSettings();
+    });
+    keyButtons.set(action, btn);
+    return [name, btn];
+  }),
+);
+
+function renderSettings(): void {
+  ghostInput.checked = settings.ghost;
+  delayInput.value = String(settings.delayMs);
+  intervalInput.value = String(settings.intervalMs);
+  setText('#set-delay-value', `${settings.delayMs} ms`);
+  setText(
+    '#set-interval-value',
+    settings.intervalMs === 0 ? '0 ms (instant)' : `${settings.intervalMs} ms`,
+  );
+  for (const [action, btn] of keyButtons) {
+    const waiting = binding === action;
+    const label = waiting ? 'Press a key' : keyLabel(settings.keys[action]);
+    if (btn.textContent !== label) btn.textContent = label;
+    btn.setAttribute('aria-pressed', String(waiting));
+    btn.setAttribute('aria-label', `${ACTION_NAMES[action]}: ${label}`);
+  }
+}
+
+/** Use `next` from now on: the repeat timing, the guide and the panel follow it. */
+function applySettings(next: Settings): void {
+  settings = next;
+  keyRepeat.setTiming(repeatTiming(settings));
+  renderSettings();
+  renderGuideKeys();
+}
+
+function changeSettings(next: Settings): void {
+  applySettings(next);
+  writeSettings(storage, settings);
+}
+
+/** Open Settings over whatever shows; a game in play pauses under it. */
+function openSettings(): void {
+  if (session && session.phase !== 'paused' && !session.game.state.over) pause();
+  keyRepeat.clear();
+  settingsOpen = true;
+  binding = null;
+  setText('#settings-note', '');
+  renderSettings();
+  renderOverlay();
+}
+
+function closeSettings(): void {
+  settingsOpen = false;
+  binding = null;
+  renderOverlay();
+}
+
+/** A key while Settings is open: the key being bound, else Esc closes it. */
+function settingsKey(e: KeyboardEvent): void {
+  // Browser shortcuts stay the browser's, and a lone modifier waits for its key.
+  if (e.ctrlKey || e.metaKey || e.altKey || ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key))
+    return;
+  if (!binding) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (!e.repeat) closeSettings();
+    }
+    return;
+  }
+  // Tab moves on, as usual, and gives up the binding.
+  if (e.key === 'Tab') {
+    binding = null;
+    setText('#settings-note', '');
+    renderSettings();
+    return;
+  }
+  e.preventDefault();
+  if (e.repeat) return;
+  if (e.key === 'Escape') {
+    binding = null;
+    setText('#settings-note', '');
+    renderSettings();
+    return;
+  }
+  const r = bindKey(settings, binding, e.key);
+  if ('error' in r) {
+    // Still waiting: the player can try another key.
+    setText('#settings-note', r.error);
+    return;
+  }
+  binding = null;
+  setText('#settings-note', '');
+  changeSettings(r.settings);
+}
+
+ghostInput.addEventListener('change', () =>
+  changeSettings({ ...settings, ghost: ghostInput.checked }),
+);
+/** The timing the sliders show, applied while dragging and stored once the drag ends. */
+function sliderSettings(): Settings {
+  return {
+    ...settings,
+    delayMs: inRange(Number(delayInput.value), DELAY_RANGE) ?? settings.delayMs,
+    intervalMs: inRange(Number(intervalInput.value), INTERVAL_RANGE) ?? settings.intervalMs,
+  };
+}
+for (const slider of [delayInput, intervalInput]) {
+  slider.addEventListener('input', () => applySettings(sliderSettings()));
+  slider.addEventListener('change', () => changeSettings(sliderSettings()));
+}
+document.querySelector('#settings-reset')!.addEventListener('click', () => {
+  binding = null;
+  setText('#settings-note', 'Defaults restored.');
+  changeSettings(DEFAULT_SETTINGS);
+});
+document.querySelector('#settings-back')!.addEventListener('click', closeSettings);
+document.querySelector('#pause-settings')!.addEventListener('click', openSettings);
+// Like Pause, the header button never takes focus, so Space can't press it mid-game.
+openSettingsBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+openSettingsBtn.addEventListener('click', () => (settingsOpen ? closeSettings() : openSettings()));
+// Another tab changed the settings: use them here too.
+window.addEventListener('storage', (e) => {
+  // A null key is storage cleared there.
+  if (e.key !== SETTINGS_KEY && e.key !== null) return;
+  // Held keys may now be other actions, so their keyups would be missed.
+  keyRepeat.clear();
+  binding = null;
+  applySettings(loadSettings(storage));
+});
+renderSettings();
 
 // Sync when the game leaves the screen (progress made here) and comes back (progress
 // made on other devices meanwhile), and when the connection returns.

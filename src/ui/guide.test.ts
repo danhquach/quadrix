@@ -3,12 +3,13 @@ import {
   GUIDE_KEY,
   GUIDE_ROWS,
   Guide,
+  guideRows,
   isGuideKey,
   loadGuideClosed,
   writeGuideClosed,
   type GuideStorage,
 } from './guide.ts';
-import { actionForKey, keyAction } from './keys.ts';
+import { DEFAULT_KEYS, actionForKey, keyAction } from './keys.ts';
 
 function memory(
   initial: Record<string, string> = {},
@@ -59,6 +60,22 @@ describe('GUIDE_ROWS', () => {
     for (const row of GUIDE_ROWS) {
       for (const text of [row.text, ...row.keys.map((k) => k.label)]) {
         expect(text).not.toMatch(/[<>&"]/);
+      }
+    }
+  });
+});
+
+describe('guideRows', () => {
+  it('shows the keys bound now, and each one does what its row says', () => {
+    const keys = { ...DEFAULT_KEYS, left: 'a', right: 'd', pause: 'q' };
+    const rows = guideRows(keys);
+    expect(rows[0]!.keys.map((k) => k.label)).toEqual(['A', 'D']);
+    expect(rows.find((r) => r.action === 'pause')!.keys.map((k) => k.label)).toEqual(['Q', 'Esc']);
+    for (const row of rows) {
+      for (const { key } of row.keys) {
+        if (row.action === 'guide') continue;
+        if (key === 'd') expect(actionForKey(key, keys)).toBe('right');
+        else expect(actionForKey(key, keys)).toBe(row.action);
       }
     }
   });

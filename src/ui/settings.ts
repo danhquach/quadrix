@@ -1,0 +1,130 @@
+import { ACTIONS, type Action } from './gestures.ts';
+import { DEFAULT_KEYS, isBindable, keyLabel, normalKey, type KeyMap } from './keys.ts';
+import { REPEAT_TIMING, type RepeatTiming } from './repeat.ts';
+import type { SaveStorage } from './save.ts';
+
+export const SETTINGS_KEY = 'quadrix.settings';
+
+export interface Settings {
+  readonly ghost: boolean;
+  /** Held-key auto-repeat: delay before the first repeat, then the interval (0 is instant). */
+  readonly delayMs: number;
+  readonly intervalMs: number;
+  readonly keys: KeyMap;
+}
+
+export const DELAY_RANGE = { min: 50, max: 300 } as const;
+export const INTERVAL_RANGE = { min: 0, max: 100 } as const;
+
+export const DEFAULT_SETTINGS: Settings = {
+  ghost: true,
+  delayMs: REPEAT_TIMING.delayMs,
+  intervalMs: REPEAT_TIMING.intervalMs,
+  keys: DEFAULT_KEYS,
+};
+
+/** Names of the bindable actions, in the order Settings lists them. Plain text. */
+export const ACTION_NAMES: Readonly<Record<Action, string>> = {
+  left: 'Move left',
+  right: 'Move right',
+  rotate: 'Rotate',
+  softDrop: 'Soft drop',
+  hardDrop: 'Hard drop',
+  pause: 'Pause',
+};
+
+/** Far more than a full settings record needs; anything longer is not ours. */
+const MAX_TEXT = 1024;
+
+/** A whole number within `range`, or null. */
+export function inRange(value: unknown, range: { min: number; max: number }): number | null {
+  return Number.isSafeInteger(value) &&
+    (value as number) >= range.min &&
+    (value as number) <= range.max
+    ? (value as number)
+    : null;
+}
+
+/** The value at an own property of `o`, so inherited names ('__proto__') read as missing. */
+function own(o: object, key: string): unknown {
+  return Object.hasOwn(o, key) ? (o as Record<string, unknown>)[key] : undefined;
+}
+
+/**
+ * Bindings from stored data. Each valid, bindable key is kept and a missing or invalid one
+ * takes its default; if that leaves two actions on one key, every binding is the default.
+ */
+function parseKeys(raw: unknown): KeyMap {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return DEFAULT_KEYS;
+  const keys = {} as Record<Action, string>;
+  for (const action of ACTIONS) {
+    const key = own(raw, action);
+    keys[action] =
+      typeof key === 'string' && key === normalKey(key) && isBindable(key)
+        ? key
+        : DEFAULT_KEYS[action];
+  }
+  return new Set(Object.values(keys)).size === ACTIONS.length ? keys : DEFAULT_KEYS;
+}
+
+/**
+ * Settings from stored text. Each value is checked against its range or the bindable
+ * keys; anything missing or invalid takes its default. Never throws: unreadable,
+ * oversized or hostile text is all defaults.
+ */
+export function parseSettings(text: string | null): Settings {
+  if (typeof text !== 'string' || text.length > MAX_TEXT) return DEFAULT_SETTINGS;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return DEFAULT_SETTINGS;
+  const ghost = own(raw, 'ghost');
+  return {
+    ghost: typeof ghost === 'boolean' ? ghost : DEFAULT_SETTINGS.ghost,
+    delayMs: inRange(own(raw, 'delayMs'), DELAY_RANGE) ?? DEFAULT_SETTINGS.delayMs,
+    intervalMs: inRange(own(raw, 'intervalMs'), INTERVAL_RANGE) ?? DEFAULT_SETTINGS.intervalMs,
+    keys: parseKeys(own(raw, 'keys')),
+  };
+}
+
+/** The stored settings, or the defaults. Storage that is missing or throws reads as defaults. */
+export function loadSettings(storage: () => SaveStorage | null): Settings {
+  try {
+    return parseSettings(storage()?.getItem(SETTINGS_KEY) ?? null);
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/** Store `s`. Never throws: without storage the settings last until a reload. */
+export function writeSettings(storage: () => SaveStorage | null, s: Settings): void {
+  try {
+    storage()?.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // Full or unavailable storage.
+  }
+}
+
+/** The repeat timing `s` sets; soft drop keeps its own pace. */
+export function repeatTiming(s: Settings): RepeatTiming {
+  return { ...REPEAT_TIMING, delayMs: s.delayMs, intervalMs: s.intervalMs };
+}
+
+/**
+ * Bind `key` (a KeyboardEvent.key) to `action`: the new settings, or why it can't be
+ * bound. A key already bound to another action is refused, never swapped.
+ */
+export function bindKey(
+  s: Settings,
+  action: Action,
+  key: string,
+): { settings: Settings } | { error: string } {
+  const k = normalKey(key);
+  if (!isBindable(k)) return { error: "That key can't be used. Try a letter, number or arrow." };
+  const taken = ACTIONS.find((a) => a !== action && s.keys[a] === k);
+  if (taken) return { error: `${keyLabel(k)} is already used for ${ACTION_NAMES[taken]}.` };
+  return { settings: { ...s, keys: { ...s.keys, [action]: k } } };
+}

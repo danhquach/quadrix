@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actionForKey, keyAction } from './keys.ts';
+import { DEFAULT_KEYS, actionForKey, isBindable, keyAction, keyLabel, normalKey } from './keys.ts';
 
 describe('actionForKey', () => {
   it('maps the control keys', () => {
@@ -81,5 +81,82 @@ describe('keyAction', () => {
       action: null,
       preventDefault: false,
     });
+  });
+});
+
+describe('rebound keys', () => {
+  const wasd = { ...DEFAULT_KEYS, left: 'a', right: 'd', rotate: 'w', softDrop: 's' };
+
+  it('maps the bound keys, in either case, and drops the old ones', () => {
+    expect(actionForKey('a', wasd)).toBe('left');
+    expect(actionForKey('A', wasd)).toBe('left');
+    expect(actionForKey('w', wasd)).toBe('rotate');
+    expect(actionForKey('ArrowLeft', wasd)).toBeNull();
+    expect(actionForKey('ArrowUp', wasd)).toBeNull();
+  });
+
+  it('keeps Esc as a pause key whatever pause is bound to', () => {
+    const k = { ...DEFAULT_KEYS, pause: 'q' };
+    expect(actionForKey('Escape', k)).toBe('pause');
+    expect(actionForKey('q', k)).toBe('pause');
+    expect(actionForKey('p', k)).toBeNull();
+  });
+
+  it('acts on a rebound key while running', () => {
+    expect(keyAction('d', 'running', false, false, wasd)).toEqual({
+      action: 'right',
+      preventDefault: true,
+    });
+  });
+
+  it('lets Space through while paused even when it is bound to a move', () => {
+    const k = { ...DEFAULT_KEYS, hardDrop: 'x', rotate: ' ' };
+    expect(keyAction(' ', 'paused', false, false, k)).toEqual({
+      action: null,
+      preventDefault: false,
+    });
+    expect(keyAction('x', 'paused', false, false, k).preventDefault).toBe(true);
+  });
+});
+
+describe('isBindable, normalKey and keyLabel', () => {
+  it('allows arrows, Space, letters, digits and plain punctuation', () => {
+    for (const key of ['ArrowLeft', 'ArrowDown', ' ', 'a', 'z', '0', '9', ',', '.', '/', ';']) {
+      expect(isBindable(key)).toBe(true);
+    }
+  });
+
+  it('refuses keys with their own job, upper case, and anything else', () => {
+    for (const key of [
+      'Escape',
+      '?',
+      'Tab',
+      'Enter',
+      'Shift',
+      'F1',
+      'A',
+      'ab',
+      '',
+      '<',
+      '\u200b',
+      'а',
+    ]) {
+      expect(isBindable(key)).toBe(false);
+    }
+  });
+
+  it('stores letters lower case and leaves named keys alone', () => {
+    expect(normalKey('Q')).toBe('q');
+    // The Kelvin sign lowercases to ASCII k: only the ASCII key is ever stored or shown.
+    expect(normalKey('\u212a')).toBe('k');
+    expect(isBindable(normalKey('\u0130'))).toBe(false);
+    expect(normalKey('ArrowUp')).toBe('ArrowUp');
+  });
+
+  it('labels keys as plain text', () => {
+    expect(keyLabel('ArrowLeft')).toBe('←');
+    expect(keyLabel(' ')).toBe('Space');
+    expect(keyLabel('p')).toBe('P');
+    expect(keyLabel(';')).toBe(';');
   });
 });

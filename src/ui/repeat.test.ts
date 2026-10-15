@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, ROWS } from '../core/game.ts';
+import { DEFAULT_KEYS } from './keys.ts';
 import { KeyRepeat, REPEAT_TIMING, heldMove, type RepeatMove } from './repeat.ts';
 
 const { delayMs, intervalMs, softDropMs } = REPEAT_TIMING;
@@ -22,6 +23,33 @@ describe('heldMove', () => {
       expect(heldMove(key, false)).toBeNull();
     }
     expect(heldMove('ArrowLeft', true)).toBeNull();
+  });
+
+  it('follows rebound keys', () => {
+    const keys = { ...DEFAULT_KEYS, left: 'a', softDrop: 's' };
+    expect(heldMove('a', false, keys)).toBe('left');
+    expect(heldMove('A', false, keys)).toBe('left');
+    expect(heldMove('s', false, keys)).toBe('softDrop');
+    expect(heldMove('ArrowLeft', false, keys)).toBeNull();
+  });
+});
+
+describe('KeyRepeat.setTiming', () => {
+  it('uses the new delay and interval from the next press', () => {
+    const r = new KeyRepeat();
+    r.setTiming({ delayMs: 50, intervalMs: 100, softDropMs });
+    r.press('left', 0);
+    expect(r.tick(49, true)).toEqual([]);
+    expect(r.tick(50, true)).toEqual(['left']);
+    expect(r.tick(149, true)).toEqual([]);
+    expect(r.tick(150, true)).toEqual(['left']);
+  });
+
+  it('with interval 0 goes straight to the wall once the delay is up', () => {
+    const r = new KeyRepeat();
+    r.setTiming({ delayMs: 50, intervalMs: 0, softDropMs });
+    r.press('right', 0);
+    expect(r.tick(50, true).length).toBe(ROWS);
   });
 });
 

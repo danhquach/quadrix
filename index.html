@@ -24,6 +24,7 @@
         <p id="best-row" class="best">Best <span id="best">0</span></p>
         <div class="controls">
           <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
+          <button id="open-settings" type="button" tabindex="-1">Settings</button>
           <button
             id="guide-toggle"
             type="button"
@@ -100,6 +101,32 @@
             <button id="cloud-off" type="button">Turn off cloud save on this device</button>
             <button id="cloud-back" type="button">Back</button>
           </div>
+          <div
+            id="settings"
+            class="pause-menu settings"
+            role="group"
+            aria-labelledby="settings-title"
+            hidden
+          >
+            <p id="settings-title" class="pause-title">Settings</p>
+            <label class="setting check">
+              <input id="set-ghost" type="checkbox" />
+              Ghost piece
+            </label>
+            <label class="setting">
+              <span>Auto-repeat delay <output id="set-delay-value"></output></span>
+              <input id="set-delay" type="range" min="50" max="300" step="1" />
+            </label>
+            <label class="setting">
+              <span>Repeat interval <output id="set-interval-value"></output></span>
+              <input id="set-interval" type="range" min="0" max="100" step="1" />
+            </label>
+            <p class="settings-head">Keys</p>
+            <div id="set-keys" class="set-keys"></div>
+            <p id="settings-note" class="settings-note" aria-live="polite"></p>
+            <button id="settings-reset" type="button">Reset to defaults</button>
+            <button id="settings-back" type="button">Back</button>
+          </div>
           <div id="ladder" class="pause-menu ladder" role="group" aria-label="Ladder" hidden>
             <div class="ladder-head">
               <button id="ladder-back" type="button">Back</button>
@@ -120,6 +147,7 @@
             <p class="pause-title">Paused</p>
             <button id="resume" type="button">Resume</button>
             <button id="restart" type="button">Restart</button>
+            <button id="pause-settings" type="button">Settings</button>
             <button id="quit" type="button">Quit</button>
           </div>
           <div
