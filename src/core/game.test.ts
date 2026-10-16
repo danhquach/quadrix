@@ -1,21 +1,98 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, Game, ROWS, spawn, type Piece } from './game.ts';
 import { MODES } from './modes/index.ts';
-import { KINDS, PieceBag, cellsOf, colorIndex } from './pieces.ts';
+import {
+  KINDS,
+  PENTOMINOES,
+  PieceBag,
+  TETROMINOES,
+  cellsOf,
+  colorIndex,
+  type Kind,
+} from './pieces.ts';
 
 describe('pieces', () => {
-  it('every kind has 4 cells in every rotation', () => {
-    for (const k of KINDS) for (let r = 0; r < 4; r++) expect(cellsOf(k, r)).toHaveLength(4);
+  it('tetrominoes have 4 cells and pentominoes 5, in every rotation', () => {
+    for (const k of TETROMINOES) for (let r = 0; r < 4; r++) expect(cellsOf(k, r)).toHaveLength(4);
+    for (const k of PENTOMINOES) for (let r = 0; r < 4; r++) expect(cellsOf(k, r)).toHaveLength(5);
   });
 
   it('4 rotations return to the spawn shape', () => {
     for (const k of KINDS) expect(cellsOf(k, 4)).toEqual(cellsOf(k, 0));
   });
 
-  it('7-bag deals each kind once per 7 draws', () => {
+  it('every shape is connected and fits a 5-wide spawn on the board', () => {
+    for (const k of KINDS) {
+      const cells = cellsOf(k, 0);
+      const key = (x: number, y: number) => `${x},${y}`;
+      const all = new Set(cells.map(([x, y]) => key(x, y)));
+      const seen = new Set([key(...cells[0]!)]);
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const [x, y] of cells) {
+          if (seen.has(key(x, y))) continue;
+          const near = [key(x + 1, y), key(x - 1, y), key(x, y + 1), key(x, y - 1)];
+          if (near.some((n) => seen.has(n))) {
+            seen.add(key(x, y));
+            grew = true;
+          }
+        }
+      }
+      expect(seen.size).toBe(all.size);
+      expect(new Game(MODES.classic!, 1).fits(spawn(k))).toBe(true);
+    }
+  });
+
+  it('the pentominoes are the 18 one-sided ones: no two alike under rotation', () => {
+    const shape = (k: Kind, r: number) => {
+      const cells = cellsOf(k, r);
+      const mx = Math.min(...cells.map(([x]) => x));
+      const my = Math.min(...cells.map(([, y]) => y));
+      return cells
+        .map(([x, y]) => `${x - mx},${y - my}`)
+        .sort()
+        .join(' ');
+    };
+    const forms = PENTOMINOES.map((k) => new Set([0, 1, 2, 3].map((r) => shape(k, r))));
+    for (let a = 0; a < forms.length; a++) {
+      for (let b = a + 1; b < forms.length; b++) {
+        expect([...forms[a]!].some((f) => forms[b]!.has(f))).toBe(false);
+      }
+    }
+    // Each mirror (…m) is its pair flipped left to right.
+    const flip = (k: Kind) => {
+      const cells = cellsOf(k, 0);
+      const mx = Math.max(...cells.map(([x]) => x));
+      return cells.map(([x, y]) => [mx - x, y] as [number, number]);
+    };
+    for (const k of PENTOMINOES.filter((p) => p.endsWith('m'))) {
+      const pair = k.slice(0, -1) as Kind;
+      const flipped = flip(pair);
+      const mx = Math.min(...flipped.map(([x]) => x));
+      const key = flipped
+        .map(([x, y]) => `${x - mx},${y}`)
+        .sort()
+        .join(' ');
+      expect(forms[PENTOMINOES.indexOf(k)]!.has(key)).toBe(true);
+    }
+  });
+
+  it('a bag deals each kind of its pool once per bag; 7 by default', () => {
     const bag = new PieceBag(1);
     const seen = Array.from({ length: 7 }, () => bag.next()).sort();
-    expect(seen).toEqual([...KINDS].sort());
+    expect(seen).toEqual([...TETROMINOES].sort());
+    const pool = MODES.classic!.kindsAt(11);
+    const big = new PieceBag(1);
+    for (let round = 0; round < 3; round++) {
+      const dealt = Array.from({ length: pool.length }, () => big.next(pool)).sort();
+      expect(dealt).toEqual([...pool].sort());
+    }
+  });
+
+  it('the default pool deals the same sequence as before pentominoes existed', () => {
+    // Pinned from the 7-bag before QX-033: the ladder's piece sequences depend on it.
+    const bag = new PieceBag(1);
+    expect(Array.from({ length: 14 }, () => bag.next()).join('')).toBe('ZITSLJOZLTSOIJ');
   });
 });
 

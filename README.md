@@ -4,8 +4,8 @@
 
 Falling-block puzzle game for the browser. Two modes:
 
-- **Classic**: standard rules. 10x20 board, 7-bag randomizer, line clears score 100/300/500/800 x level, level up every 10 lines.
-- **Override**: rules TBD. Currently identical to Classic; see `src/core/modes/override.ts`.
+- **Classic**: 10x20 board, bag randomizer, line clears score 100/300/500/800 x level, level up every 10 lines. Every level is faster: 800 ms a row at level 1, easing off toward a 50 ms floor reached at level 21. From level 6, every 5 levels (6, 11, 16 … 46) two 5-block pieces join the bag, a mirror pair together, until all 18 are in; a "New pieces!" banner announces them, and they arrive from the next bag. Ladder rungs use the same speed but deal the 7 standard pieces only.
+- **Override**: rules TBD. Currently Classic with its original speed (800 ms, 70 ms faster a level down to 80 ms) and the 7 standard pieces only; see `src/core/modes/override.ts`.
 
 ## Run
 
@@ -40,7 +40,7 @@ npm run dev
 src/
   core/           pure engine, no DOM (unit-tested)
     game.ts       board, movement, locking, line clears
-    pieces.ts     shapes, rotation, seeded 7-bag
+    pieces.ts     shapes (7 tetrominoes, 18 pentominoes), rotation, seeded bag
     profile.ts    player profile: name, bests, rung stars, totals; validated on read; merge
     session.ts    gravity clock, pause and resume countdown
     snapshot.ts   versioned save format for a game in progress, validated on read

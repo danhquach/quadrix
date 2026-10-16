@@ -1,5 +1,5 @@
 import { MAX_EVENTS, type Cell, type GameEvent } from './events.ts';
-import { PieceBag, cellsOf, colorIndex, type BagState, type Kind } from './pieces.ts';
+import { PieceBag, TETROMINOES, cellsOf, colorIndex, type BagState, type Kind } from './pieces.ts';
 import type { Mode } from './modes/index.ts';
 import { scoreLock, type Award, type Chain, type Spin } from './scoring.ts';
 
@@ -82,17 +82,22 @@ export class Game {
       return;
     }
     this.bag = new PieceBag(from);
-    const first = this.bag.next();
+    const first = this.bag.next(mode.kindsAt(1));
     this.state = {
       mode,
       board: Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0)),
       piece: spawn(first),
-      next: this.bag.next(),
+      next: this.bag.next(mode.kindsAt(1)),
       score: 0,
       lines: 0,
       level: 1,
       over: false,
     };
+  }
+
+  /** The pieces this game deals now: the mode's for the level, or the tetrominoes on a rung. */
+  get kinds(): readonly Kind[] {
+    return kindsFor(this.state.mode, this.state.level, this.rung);
   }
 
   /** Pieces locked in this game, a save's included; lets the UI save after each lock. */
@@ -248,11 +253,16 @@ export class Game {
       s.lines += cleared;
       // Never below the level the game started on (a ladder rung can start above 1).
       const from = s.level;
+      const had = this.kinds.length;
       s.level = Math.max(s.level, s.mode.levelForLines(s.lines));
-      if (s.level > from) this.emit({ type: 'levelUp', from, level: s.level });
+      if (s.level > from) {
+        this.emit({ type: 'levelUp', from, level: s.level });
+        const added = this.kinds.slice(had);
+        if (added.length > 0) this.emit({ type: 'newPieces', kinds: added });
+      }
     }
     s.piece = spawn(s.next);
-    s.next = this.bag.next();
+    s.next = this.bag.next(this.kinds);
     if (!this.fits(s.piece)) this.end();
   }
 
@@ -300,6 +310,11 @@ export function tSpin(board: number[][], p: Piece): Spin {
   if (filled.filter(Boolean).length < 3) return 'none';
   // Rotation r points at corners r and r + 1 (0 points up: top left and top right).
   return filled[p.rot]! && filled[(p.rot + 1) % 4]! ? 'full' : 'mini';
+}
+
+/** The pieces dealt at `level` by `mode`: ladder rungs (`rung` set) deal the tetrominoes only. */
+export function kindsFor(mode: Mode, level: number, rung: number | null): readonly Kind[] {
+  return rung === null ? mode.kindsAt(level) : TETROMINOES;
 }
 
 /** The board cells piece `p` covers. */

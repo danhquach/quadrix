@@ -15,6 +15,8 @@ export const COVER_MS = 300;
 export const COVER_FADE_MS = 100;
 /** Level up: a light runs once round the frame, and a "Level N" banner shows. */
 export const LEVEL_MS = 600;
+/** Pentominoes joined: a "New pieces!" banner under the level one, held a little longer. */
+export const NEW_PIECES_MS = 1200;
 /** Any locked cell in the top rows lights the danger glow. */
 export const DANGER_ROWS = 4;
 export const DANGER_PERIOD_MS = 1600;
@@ -275,8 +277,8 @@ function centre(cells: readonly Cell[]): [number, number] | null {
 /**
  * The feedback effects as an effect source: a flash on every lock, a popup with the
  * points and labels of every award (from the rows it cleared, else from the piece), and
- * the frame light and banner on every level up. `pieceSpan` gives the falling piece's
- * columns now, or null with no piece in play.
+ * the frame light and banner on every level up, and a banner when new pieces join.
+ * `pieceSpan` gives the falling piece's columns now, or null with no piece in play.
  */
 export function feedback(look: FeedbackLook, pieceSpan: () => Span | null): EffectSource {
   /** Where the last lock's popup starts. One action reports its lock before its award. */
@@ -299,6 +301,9 @@ export function feedback(look: FeedbackLook, pieceSpan: () => Span | null): Effe
       fx.add(new FrameLight(look.light));
       const banner = [{ text: `Level ${event.level}`, size: BANNER_SIZE }];
       fx.add(new FloatText(banner, [COLS / 2, ROWS * 0.3], 0, LEVEL_MS, look, pieceSpan));
+    } else if (event.type === 'newPieces') {
+      const banner = [{ text: 'New pieces!', size: LABEL_SIZE * 1.5 }];
+      fx.add(new FloatText(banner, [COLS / 2, ROWS * 0.4], 0, NEW_PIECES_MS, look, pieceSpan));
     }
   };
 }

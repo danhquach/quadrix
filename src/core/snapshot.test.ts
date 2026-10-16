@@ -328,3 +328,121 @@ describe('snapshot of a ladder rung', () => {
     expect(SNAPSHOT_VERSION).toBe(3);
   });
 });
+
+describe('snapshot with pentominoes (QX-033)', () => {
+  /** A free Classic game on `level` with a P and an L5 locked and some of the bag used. */
+  function bigPieces(level = 11, seed = 5): Game {
+    const lines = (level - 1) * 10;
+    const fresh = new Game(MODES.classic!, seed);
+    const empty = Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0));
+    const g = new Game(MODES.classic!, {
+      ...fresh.save(),
+      board: empty,
+      lines,
+      level,
+      // As if every cleared cell came from a tetromino.
+      pieces: (lines * COLS) / 4,
+      bag: { rng: seed, bag: [] },
+    });
+    g.state.piece = { kind: 'P', rot: 0, x: 0, y: 0 };
+    g.hardDrop();
+    g.state.piece = { kind: 'L5', rot: 0, x: 5, y: 0 };
+    g.hardDrop();
+    g.hardDrop();
+    return g;
+  }
+  const big = () => JSON.parse(toSnapshot(bigPieces())) as Record<string, unknown>;
+
+  it('resumes with the same level, speed and piece set, and deals the same', () => {
+    for (const seed of [1, 5, 42]) {
+      const g = bigPieces(11, seed);
+      const r = fromSnapshot(toSnapshot(g))!;
+      expect(r).not.toBeNull();
+      expect(r.save()).toEqual(g.save());
+      expect(r.kinds).toEqual(g.kinds);
+      expect(r.state.mode.gravityMs(r.state.level)).toBe(MODES.classic!.gravityMs(11));
+      expect(playOut(r, 30)).toEqual(playOut(g, 30));
+    }
+  });
+
+  it('accepts a bag holding new pieces', () => {
+    const s = big();
+    expect((s.bag as string[]).length).toBeGreaterThan(0);
+    expect(parse({ ...s, bag: ['P', 'J5', 'I'] })).not.toBeNull();
+  });
+
+  it('rejects pieces not dealt yet at the level', () => {
+    const s = big();
+    for (const k of ['Y', 'I5', 'X']) {
+      expect(parse({ ...s, next: k })).toBeNull();
+      expect(parse({ ...s, bag: [k] })).toBeNull();
+    }
+    const low = { ...s, level: 5, lines: 40 };
+    expect(parse({ ...low, bag: [] })).toBeNull(); // the board holds 5-cell pieces
+    expect(parse({ ...low, piece: { kind: 'P', rot: 0, x: 3, y: 0 } })).toBeNull();
+  });
+
+  it('rejects a bag as big as the pool, with repeats, or with unknown kinds', () => {
+    const s = big();
+    const pool = MODES.classic!.kindsAt(11);
+    expect(parse({ ...s, bag: [...pool] })).toBeNull();
+    expect(parse({ ...s, bag: ['P', 'P'] })).toBeNull();
+    for (const k of ['__proto__', 'constructor', 'p', 'P ', 'I6', '', 7, null]) {
+      expect(parse({ ...s, bag: [k] })).toBeNull();
+      expect(parse({ ...s, next: k })).toBeNull();
+      expect(parse({ ...s, piece: { ...(s.piece as object), kind: k } })).toBeNull();
+    }
+  });
+
+  it('needs 4 to 5 cells per locked piece, counting cleared lines', () => {
+    const s = big();
+    const cells = (s.board as number[][]).flat().filter((c) => c !== 0).length;
+    const placed = cells + COLS * (s.lines as number);
+    const fewest = Math.ceil(placed / 5);
+    const most = Math.floor(placed / 4);
+    expect(parse({ ...s, pieces: fewest })).not.toBeNull();
+    expect(parse({ ...s, pieces: most })).not.toBeNull();
+    expect(parse({ ...s, pieces: fewest - 1 })).toBeNull();
+    expect(parse({ ...s, pieces: most + 1 })).toBeNull();
+  });
+
+  it('accepts board cells of every kind but nothing past them', () => {
+    const s = JSON.parse(toSnapshot(bigPieces(46))) as Record<string, unknown>;
+    const board = (s.board as number[][]).map((row) => [...row]);
+    const at = board[ROWS - 1]!.findIndex((c) => c !== 0);
+    board[ROWS - 1]![at] = 25;
+    expect(parse({ ...s, board })).not.toBeNull();
+    board[ROWS - 1]![at] = 26;
+    expect(parse({ ...s, board })).toBeNull();
+  });
+
+  it('rejects a pentomino in a ladder rung save, at any level', () => {
+    const g = startRung(rung(64));
+    const s = JSON.parse(toSnapshot(g)) as Record<string, unknown>;
+    expect(parse(s)).not.toBeNull();
+    expect(parse({ ...s, next: 'P' })).toBeNull();
+    expect(parse({ ...s, bag: ['P'] })).toBeNull();
+    expect(parse({ ...s, piece: { kind: 'P', rot: 0, x: 3, y: 0 } })).toBeNull();
+    const board = (s.board as number[][]).map((row) => [...row]);
+    const at = board[ROWS - 1]!.findIndex((c) => c !== 0);
+    board[ROWS - 1]![at] = 7;
+    expect(parse({ ...s, board })).not.toBeNull();
+    board[ROWS - 1]![at] = 8;
+    expect(parse({ ...s, board })).toBeNull();
+  });
+
+  it('rejects a board cell coloured as a kind not dealt yet at the level', () => {
+    const s = big(); // level 11: the tetrominoes and the first 4 pentominoes
+    const board = (s.board as number[][]).map((row) => [...row]);
+    const at = board[ROWS - 1]!.findIndex((c) => c !== 0);
+    board[ROWS - 1]![at] = 11;
+    expect(parse({ ...s, board })).not.toBeNull();
+    board[ROWS - 1]![at] = 12;
+    expect(parse({ ...s, board })).toBeNull();
+  });
+
+  it('a pre-QX-033 save (tetrominoes only) still resumes', () => {
+    expect(parse(valid())).not.toBeNull();
+    expect(SNAPSHOT_VERSION).toBe(3);
+  });
+});

@@ -41,7 +41,7 @@ describe('page palette', () => {
   });
 
   it('pieces use the vibrant palette', () => {
-    expect(PIECE_VARS.map(v)).toEqual([
+    expect(PIECE_VARS.slice(0, 7).map(v)).toEqual([
       '#00e5ff',
       '#ffd600',
       '#b84dff',
@@ -68,6 +68,27 @@ describe('page palette', () => {
 
   it('every piece color is different', () => {
     expect(new Set(PIECE_VARS.map((n) => v(n).toLowerCase())).size).toBe(KINDS.length);
+  });
+
+  it('every piece color is far from every other (CIE76 ΔE ≥ 20), so no two kinds look alike', () => {
+    const lab = (hex: string) => {
+      const [r, g, b] = parseHex(hex)!.map((c) => {
+        const s = c / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      }) as [number, number, number];
+      const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+      const x = f((r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047);
+      const y = f(r * 0.2126 + g * 0.7152 + b * 0.0722);
+      const z = f((r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883);
+      return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+    };
+    const colors = PIECE_VARS.map((n) => lab(v(n)));
+    for (let i = 0; i < colors.length; i++) {
+      for (let j = i + 1; j < colors.length; j++) {
+        const d = Math.hypot(...colors[i]!.map((c, k) => c - colors[j]![k]!));
+        expect(d, `${PIECE_VARS[i]} vs ${PIECE_VARS[j]}`).toBeGreaterThanOrEqual(20);
+      }
+    }
   });
 
   it('the grid is faint: visible on the well but far below the blocks', () => {

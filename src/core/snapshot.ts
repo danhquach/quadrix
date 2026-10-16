@@ -1,8 +1,8 @@
-import { COLS, Game, ROWS, type Piece } from './game.ts';
+import { COLS, Game, ROWS, kindsFor, type Piece } from './game.ts';
 import { MAX_RUNGS, rung } from './ladder.ts';
 import { MODES } from './modes/index.ts';
 import { classic } from './modes/classic.ts';
-import { KINDS, type Kind } from './pieces.ts';
+import { KINDS, cellsOf, type Kind } from './pieces.ts';
 
 /** Bump when the format changes; older snapshots are then discarded, not migrated. */
 export const SNAPSHOT_VERSION = 3;
@@ -71,7 +71,7 @@ export function fromSnapshot(text: string): Game | null {
     !isInt(s.lines, 0, MAX_COUNT) ||
     !isInt(s.level, 1, MAX_COUNT) ||
     !isInt(s.rng, 0, 0xffffffff) ||
-    !isBag(s.bag) ||
+    !Array.isArray(s.bag) ||
     !isInt(s.pieces, 0, MAX_COUNT) ||
     !(s.rung === null || isInt(s.rung, 1, MAX_RUNGS)) ||
     // Every drop in a streak cleared a line, and back-to-back needs a clear behind it.
@@ -90,9 +90,21 @@ export function fromSnapshot(text: string): Game | null {
     if (s.level !== Math.max(r.startLevel, mode.levelForLines(s.lines))) return null;
     startCells = filled(r.board);
   }
-  // Every lock adds 4 cells and every cleared line takes 10, so the board, piece count and
-  // lines must agree exactly: a save can't claim fewer pieces (more stars) than it used.
-  if (filled(s.board) !== startCells + 4 * s.pieces - COLS * s.lines) return null;
+  // The falling piece, the next one and the bag come from the pieces dealt at this level
+  // (the set only grows with the level, so nothing dealt earlier falls outside it).
+  const kinds = kindsFor(mode, s.level, s.rung);
+  if (!kinds.includes(piece.kind) || !kinds.includes(s.next) || !isBag(s.bag, kinds)) {
+    return null;
+  }
+  // The pool is a prefix of KINDS, so a board cell can't hold the colour of a kind not dealt.
+  if (s.board.some((row) => row.some((c) => c > kinds.length))) return null;
+  // Every lock adds 4 or 5 cells and every cleared line takes 10, so the board, piece count
+  // and lines must agree. With tetrominoes alone (every rung) that is exact: a save can't
+  // claim fewer pieces (more stars) than it used.
+  const minCell = Math.min(...kinds.map((k) => cellsOf(k, 0).length));
+  const maxCell = Math.max(...kinds.map((k) => cellsOf(k, 0).length));
+  const placed = filled(s.board) - startCells + COLS * s.lines;
+  if (placed < minCell * s.pieces || placed > maxCell * s.pieces) return null;
   const game = new Game(mode, {
     board: s.board,
     piece: { kind: piece.kind, rot: piece.rot, x: piece.x, y: piece.y },
@@ -167,9 +179,12 @@ function isBoard(v: unknown): v is number[][] {
   );
 }
 
-/** The kinds left in a 7-bag: fewer than 7, no repeats (an empty bag refills on draw). */
-function isBag(v: unknown): v is Kind[] {
+/** The kinds left in a bag of `kinds`: fewer than all, no repeats (an empty bag refills on draw). */
+function isBag(v: unknown, kinds: readonly Kind[]): v is Kind[] {
   return (
-    Array.isArray(v) && v.length < KINDS.length && v.every(isKind) && new Set(v).size === v.length
+    Array.isArray(v) &&
+    v.length < kinds.length &&
+    v.every((k) => isKind(k) && kinds.includes(k)) &&
+    new Set(v).size === v.length
   );
 }

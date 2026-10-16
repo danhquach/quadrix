@@ -6,7 +6,8 @@ export type Cell = readonly [number, number];
 /**
  * Something that happened in a game, with what an effect needs to show it. The game
  * only reports these; it knows nothing about who listens. One action reports its
- * events in this order: hardDrop, lock, clear, award, levelUp, over.
+ * events in this order: hardDrop, lock, clear, award, levelUp, newPieces,
+ * over.
  */
 export type GameEvent =
   /**
@@ -41,6 +42,8 @@ export type GameEvent =
       readonly fullClear: boolean;
     }
   | { readonly type: 'levelUp'; readonly from: number; readonly level: number }
+  /** The level up added `kinds` to the pieces dealt; they arrive from the next bag. */
+  | { readonly type: 'newPieces'; readonly kinds: readonly Kind[] }
   | { readonly type: 'over' };
 
 /** Events kept for the reader at most; past this the oldest go. A frame makes a handful. */

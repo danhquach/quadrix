@@ -28,6 +28,26 @@
   --piece-z: #ff2d55;
   --piece-j: #2f6bff;
   --piece-l: #ff8a00;
+  /* Pentominoes (QX-033), in KINDS order: picked to stay far from every other piece
+     colour (CIE76 ΔE ≥ 20, see skin.test.ts). */
+  --piece-p: #ff00aa;
+  --piece-pm: #bbff00;
+  --piece-l5: #2691d9;
+  --piece-j5: #26d9a9;
+  --piece-y: #00ff00;
+  --piece-ym: #ff3300;
+  --piece-n: #ff00ee;
+  --piece-nm: #ff7452;
+  --piece-t5: #ffba52;
+  --piece-u: #f3ff52;
+  --piece-v: #ef3982;
+  --piece-w: #298dff;
+  --piece-f: #6ed926;
+  --piece-fm: #29c6ff;
+  --piece-s5: #29fff1;
+  --piece-z5: #00ffaa;
+  --piece-x: #d926c1;
+  --piece-i5: #a9d926;
   --font-display: 'Avenir Next', 'Segoe UI', ui-rounded, system-ui, sans-serif;
   /* Every UI transition takes its timing from here (QX-028): no one-off numbers.
      Reduced turns slides and scales into plain fades; Off makes everything instant. */
