@@ -38,7 +38,7 @@ import {
 } from './vfx.ts';
 import css from '../page.css?raw';
 
-const PIECES = ['#3cc8e6', '#f2cb4c', '#a86de0', '#5cc860', '#e85660', '#4f80ea', '#f08d3c'];
+const PIECES = ['#00e5ff', '#ffd600', '#b84dff', '#2ee86a', '#ff2d55', '#2f6bff', '#ff8a00'];
 const LOOK: VfxLook = { pieces: PIECES, flash: '#fff', light: '#ff0', dust: '#999' };
 
 /** The custom properties set in page.css's `:root` block. */
@@ -565,12 +565,12 @@ describe('colour helpers', () => {
 describe('Override freeze (#27)', () => {
   it('desaturates then washes the board blue, by amount', () => {
     const ctx = stubCtx();
-    drawFreeze(ctx, 10, 0.5, '#4f80ea');
+    drawFreeze(ctx, 10, 0.5, '#2f6bff');
     expect(ctx.ops).toEqual(['saturation', 'source-over']);
-    expect(ctx.rects[1]!.color).toBe('#4f80ea');
+    expect(ctx.rects[1]!.color).toBe('#2f6bff');
     expect(ctx.rects[1]!.alpha).toBeLessThan(ctx.rects[0]!.alpha);
     const none = stubCtx();
-    drawFreeze(none, 10, 0, '#4f80ea');
+    drawFreeze(none, 10, 0, '#2f6bff');
     expect(none.rects).toEqual([]);
   });
 

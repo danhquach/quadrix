@@ -11,7 +11,7 @@ import {
 } from './core/ladder.ts';
 import { MODES } from './core/modes/index.ts';
 import { Session } from './core/session.ts';
-import { KINDS, cellsOf, colorIndex, type Kind } from './core/pieces.ts';
+import { cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { Effects } from './ui/effects.ts';
@@ -45,7 +45,6 @@ import {
   type Settings,
 } from './ui/settings.ts';
 import {
-  MARKS,
   PIECE_STYLES,
   PIECE_STYLE_NAMES,
   PIECE_VARS,
@@ -574,10 +573,10 @@ function drawCell(
   oy = 0,
   grey = false,
 ): void {
-  const colors = grey ? GREY : BLOCKS[color - 1];
-  const kind = KINDS[color - 1];
-  if (y < 0 || !colors || !kind) return;
-  drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind], settings.pieceStyle);
+  // Only a piece's color (1..KINDS.length) draws; the grey stands in for it at game over.
+  if (y < 0 || !BLOCKS[color - 1]) return;
+  const colors = grey ? GREY : BLOCKS[color - 1]!;
+  drawBlock(c, ox + x * size, oy + y * size, size, colors, settings.pieceStyle);
 }
 
 /** The empty well: background, its ambient light and faint grid lines on the cell edges. */
@@ -1334,7 +1333,7 @@ document.querySelector('#set-styles')!.replaceChildren(
       c.fillRect(0, 0, sample.width, sample.height);
       for (const [kind, x, y] of SAMPLE) {
         const colors = BLOCKS[colorIndex(kind) - 1]!;
-        drawBlock(c, 4 + x * size, 4 + y * size, size, colors, MARKS[kind], style);
+        drawBlock(c, 4 + x * size, 4 + y * size, size, colors, style);
       }
     }
     const name = document.createElement('span');

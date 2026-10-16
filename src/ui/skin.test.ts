@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KINDS } from '../core/pieces.ts';
 import {
-  MARKS,
   PIECE_VARS,
   blockColors,
   contrast,
@@ -41,6 +40,32 @@ describe('page palette', () => {
     }
   });
 
+  it('pieces use the vibrant palette', () => {
+    expect(PIECE_VARS.map(v)).toEqual([
+      '#00e5ff',
+      '#ffd600',
+      '#b84dff',
+      '#2ee86a',
+      '#ff2d55',
+      '#2f6bff',
+      '#ff8a00',
+    ]);
+  });
+
+  it('the game-over grey is neutral, far from every saturated piece color', () => {
+    const chroma = (hex: string) => {
+      const rgb = parseHex(hex)!;
+      return (Math.max(...rgb) - Math.min(...rgb)) / 255;
+    };
+    const grey = v('--stack-over');
+    expect(chroma(grey)).toBeLessThan(0.15);
+    for (const name of PIECE_VARS) {
+      expect(chroma(v(name))).toBeGreaterThan(0.6);
+      const [a, b] = [parseHex(v(name))!, parseHex(grey)!];
+      expect(Math.hypot(...a.map((c, i) => c - b[i]!))).toBeGreaterThan(120);
+    }
+  });
+
   it('every piece color is different', () => {
     expect(new Set(PIECE_VARS.map((n) => v(n).toLowerCase())).size).toBe(KINDS.length);
   });
@@ -49,31 +74,6 @@ describe('page palette', () => {
     const grid = contrast(v('--grid'), v('--well-bg'));
     expect(grid).toBeGreaterThan(1.05);
     expect(grid).toBeLessThan(1.5);
-  });
-});
-
-describe('marks', () => {
-  it('give every kind its own mark, so kinds differ by more than hue', () => {
-    const keys = KINDS.map((k) => JSON.stringify(MARKS[k]));
-    expect(new Set(keys).size).toBe(KINDS.length);
-  });
-
-  it('stay inside the block', () => {
-    for (const k of KINDS) {
-      for (const [x, y, w, h] of MARKS[k]) {
-        expect(x).toBeGreaterThanOrEqual(0);
-        expect(y).toBeGreaterThanOrEqual(0);
-        expect(x + w).toBeLessThanOrEqual(1);
-        expect(y + h).toBeLessThanOrEqual(1);
-      }
-    }
-  });
-
-  it('stand out from the block face', () => {
-    for (const name of PIECE_VARS) {
-      const c = blockColors(v(name));
-      expect(contrast(c.mark, c.base)).toBeGreaterThanOrEqual(2);
-    }
   });
 });
 
@@ -90,8 +90,8 @@ describe('color helpers', () => {
     expect(shade('#808080', 1)).toBe('#ffffff');
     expect(shade('#808080', -1)).toBe('#000000');
     expect(shade('#808080', 0)).toBe('#808080');
-    expect(luminance(shade('#4f80ea', 0.35))).toBeGreaterThan(luminance('#4f80ea'));
-    expect(luminance(shade('#4f80ea', -0.35))).toBeLessThan(luminance('#4f80ea'));
+    expect(luminance(shade('#2f6bff', 0.35))).toBeGreaterThan(luminance('#2f6bff'));
+    expect(luminance(shade('#2f6bff', -0.35))).toBeLessThan(luminance('#2f6bff'));
   });
 
   it('contrast matches WCAG for black on white', () => {
@@ -135,9 +135,9 @@ describe('drawBlock', () => {
   it.each(PIECE_STYLES.flatMap((st) => [1, 2, 5, 8, 24, 31, 64].map((n) => [st, n] as const)))(
     '%s stays inside its cell at %ipx',
     (style, size) => {
-      for (const k of KINDS) {
+      for (const name of PIECE_VARS) {
         const { rects, paths, ctx } = recorder();
-        drawBlock(ctx, 100, 200, size, blockColors('#4f80ea'), MARKS[k], style);
+        drawBlock(ctx, 100, 200, size, blockColors(v(name)), style);
         const boxes = [...rects.map((r) => ({ box: r, line: 0 })), ...paths];
         // Too small for a block once its gap is taken: nothing at all.
         if (size > 2) expect(boxes.length).toBeGreaterThan(0);
@@ -155,24 +155,31 @@ describe('drawBlock', () => {
     },
   );
 
-  it('bevel draws bevel, face and the mark', () => {
+  it('bevel draws only its edges and face: no inner marks', () => {
     const { rects, paths, ctx } = recorder();
-    drawBlock(ctx, 0, 0, 32, blockColors('#4f80ea'), MARKS.S);
-    expect(rects).toHaveLength(3 + MARKS.S.length);
+    drawBlock(ctx, 0, 0, 32, blockColors('#2f6bff'));
+    expect(rects).toHaveLength(3);
     expect(paths).toHaveLength(0);
   });
 
-  it.each(['gem', 'neon'] as const)('%s draws rounded shapes and still the mark', (style) => {
+  it('gem draws its rim, face and gloss as rounded shapes: no inner marks', () => {
     const { rects, paths, ctx } = recorder();
-    drawBlock(ctx, 0, 0, 32, blockColors('#4f80ea'), MARKS.S, style);
-    expect(rects).toHaveLength(MARKS.S.length);
-    expect(paths.length).toBeGreaterThan(0);
+    drawBlock(ctx, 0, 0, 32, blockColors('#2f6bff'), 'gem');
+    expect(rects).toHaveLength(0);
+    expect(paths).toHaveLength(3);
   });
 
-  it("neon's lit mark stands out from its dark face", () => {
+  it('neon draws its face and outline as rounded shapes: no inner marks', () => {
+    const { rects, paths, ctx } = recorder();
+    drawBlock(ctx, 0, 0, 32, blockColors('#2f6bff'), 'neon');
+    expect(rects).toHaveLength(0);
+    expect(paths).toHaveLength(2);
+  });
+
+  it("neon's outline stands out from its dark face", () => {
     for (const name of PIECE_VARS) {
       const c = blockColors(v(name));
-      expect(contrast(c.light, c.deep)).toBeGreaterThanOrEqual(3);
+      expect(contrast(c.base, c.deep)).toBeGreaterThanOrEqual(3);
     }
   });
 });
