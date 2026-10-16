@@ -101,6 +101,20 @@ describe('game events', () => {
     expect(award.labels).toEqual(g.award!.labels);
     // Scored on the level before the clear raised it.
     expect(award.level).toBe(1);
+    // The first clear: no combo yet. setUpClear leaves the board empty.
+    expect(award.combo).toBe(0);
+    expect(award.fullClear).toBe(true);
+  });
+
+  it('an award that leaves blocks on the board is no full clear', () => {
+    const g = new Game(MODES.classic!, 1);
+    setUpClear(g);
+    g.state.board[0]![0] = 1;
+    g.hardDrop();
+    const award = g.takeEvents().find((e) => e.type === 'award');
+    if (award?.type !== 'award') throw new Error('no award');
+    expect(award.fullClear).toBe(false);
+    expect(award.combo).toBe(0);
   });
 
   it('a lock that scores nothing reports no award', () => {
@@ -121,6 +135,8 @@ describe('game events', () => {
     // setUpClear leaves the board empty: a full clear too.
     expect(award.labels).toEqual(['Combo 1', 'Full clear']);
     expect(award.labels).not.toBe(g.award!.labels);
+    expect(award.combo).toBe(1);
+    expect(award.fullClear).toBe(true);
   });
 
   it('game over is reported once, after the lock that caused it, and nothing after', () => {

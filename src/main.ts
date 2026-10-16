@@ -18,6 +18,7 @@ import { Effects } from './ui/effects.ts';
 import { Danger, HudCount, drawGlow, feedback, inDanger, type Span } from './ui/feedback.ts';
 import { fitBoard } from './ui/fit.ts';
 import { Motion } from './ui/motion.ts';
+import { Ambient, Shake, drawBlockGlow, rng, vfx } from './ui/vfx.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
 import { isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
@@ -50,6 +51,8 @@ const theme = getComputedStyle(document.documentElement);
 const cssColor = (name: string) => theme.getPropertyValue(name).trim();
 /** Block colors by board cell value (KINDS index + 1); 0 is empty. */
 const BLOCKS = PIECE_VARS.map((v) => blockColors(cssColor(v)));
+/** Base piece colors by board cell value - 1, for particles and the block glow. */
+const PIECES = PIECE_VARS.map((v) => cssColor(v) || '#888');
 const WELL_BG = cssColor('--well-bg') || '#000';
 const GRID = cssColor('--grid') || '#222';
 /** Every block of a stack that topped out, once the game-over sweep reaches it. */
@@ -160,6 +163,24 @@ fx.use(
       light: cssColor('--accent') || '#ffd166',
     },
     pieceSpan,
+  ),
+);
+/** The quad and full-clear board shake. */
+const shake = new Shake(settings.effects);
+/** The living well background: gradient, drifting motes, pulse on clears, hue per level. */
+const ambient = new Ambient(settings.effects);
+// Row breaks, the shockwave, drop streak and dust, combo sparks; shakes and pulses.
+fx.use(
+  vfx(
+    {
+      pieces: PIECES,
+      flash: cssColor('--text') || '#fff',
+      light: cssColor('--accent') || '#ffd166',
+      dust: cssColor('--muted') || '#a3a9c2',
+    },
+    shake,
+    ambient,
+    rng(0x5eed),
   ),
 );
 /** The previous frame's time, for the effects clock. */
@@ -300,6 +321,8 @@ function begin(game: Game, countdown: boolean): void {
   rungNow = game.rung === null ? null : rung(game.rung);
   fx.clear();
   motion.clear();
+  shake.clear();
+  ambient.clear();
   session = new Session(game, performance.now());
   if (countdown) {
     session.pause();
@@ -337,6 +360,8 @@ function resumeSaved(): void {
   result = null;
   fx.clear();
   motion.clear();
+  shake.clear();
+  ambient.clear();
   session = new Session(saved, performance.now());
   session.pause();
   savedLocks = session.game.locks;
@@ -543,10 +568,11 @@ function drawCell(
   drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind]);
 }
 
-/** The empty well: background and faint grid lines on the cell edges. */
+/** The empty well: background, its ambient light and faint grid lines on the cell edges. */
 function drawWell(): void {
   ctx.fillStyle = WELL_BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ambient.draw(ctx, cell);
   ctx.fillStyle = GRID;
   for (let x = 1; x < COLS; x++) ctx.fillRect(x * cell, 0, 1, canvas.height);
   for (let y = 1; y < ROWS; y++) ctx.fillRect(0, y * cell, canvas.width, 1);
@@ -633,10 +659,12 @@ function setHidden(id: string, hidden: boolean): void {
 }
 
 function render(): void {
-  drawWell();
-  renderOverlay();
   // The game in play, or the finished one under its result.
   const game = session?.game ?? (screen === 'result' ? result?.game : null) ?? null;
+  ambient.setLevel(game?.state.level ?? 1);
+  drawWell();
+  renderOverlay();
+  shakeBoard();
   const r = game ? rungNow : null;
   setHidden('#best-row', r !== null);
   setHidden('#rung-row', r === null);
@@ -677,6 +705,10 @@ function render(): void {
     return;
   }
   fx.draw(ctx, 'background', cell);
+  if (settings.effects === 'full') {
+    const shift = (y: number) => Math.round(motion.rowShift(y) * cell);
+    drawBlockGlow(ctx, cell, s.board, PIECES, shift, (y) => motion.greyed(y));
+  }
   drawStack(s.board);
   fx.draw(ctx, 'board', cell);
   if (live) drawPiece(game);
@@ -685,6 +717,16 @@ function render(): void {
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
+}
+
+/**
+ * Move the board by the shake's offset; CSS pixels, so it is the same on every screen.
+ * A pause or countdown shows the board still.
+ */
+function shakeBoard(): void {
+  const [x, y] = session && session.phase !== 'running' ? [0, 0] : shake.offset();
+  const t = x || y ? `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px)` : '';
+  if (canvas.style.transform !== t) canvas.style.transform = t;
 }
 
 /** The locked blocks, as the motion has them: dropping after a clear, squashed, greyed. */
@@ -813,6 +855,8 @@ function loop(now: number): void {
   motion.frame(now - (lastFrame ?? now), frozen);
   hud.frame(now - (lastFrame ?? now), frozen);
   danger.frame(now - (lastFrame ?? now), frozen);
+  shake.frame(now - (lastFrame ?? now), frozen);
+  ambient.frame(now - (lastFrame ?? now), frozen);
   lastFrame = now;
   playSounds();
   render();
@@ -1269,6 +1313,8 @@ function applySettings(next: Settings): void {
   motion.level = settings.effects;
   hud.level = settings.effects;
   danger.level = settings.effects;
+  shake.level = settings.effects;
+  ambient.level = settings.effects;
   // page.css picks the HUD pulse and the result's entrance by it.
   document.documentElement.dataset.effects = settings.effects;
   keyRepeat.setTiming(repeatTiming(settings));

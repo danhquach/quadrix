@@ -28,12 +28,17 @@ export type GameEvent =
       readonly rows: readonly number[];
       readonly colors: readonly (readonly number[])[];
     }
-  /** What the lock scored on `level` and why ("Quad", "Combo 2"); only when it scored anything. */
+  /**
+   * What the lock scored on `level` and why ("Quad", "Combo 2"); only when it scored
+   * anything. `combo` is the combo count (0 for none); `fullClear` that it emptied the board.
+   */
   | {
       readonly type: 'award';
       readonly points: number;
       readonly labels: readonly string[];
       readonly level: number;
+      readonly combo: number;
+      readonly fullClear: boolean;
     }
   | { readonly type: 'levelUp'; readonly from: number; readonly level: number }
   | { readonly type: 'over' };
