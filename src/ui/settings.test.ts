@@ -6,13 +6,19 @@ import type { SaveStorage } from './save.ts';
 import {
   ACTION_NAMES,
   DEFAULT_SETTINGS,
+  DELAY_RANGE,
+  INTERVAL_RANGE,
+  MOVE_SPEEDS,
   SETTINGS_KEY,
   bindKey,
   defaultSettings,
   ghostOpacityIn,
+  isMoveSpeed,
   loadSettings,
+  moveSpeedOf,
   parseSettings,
   repeatTiming,
+  withMoveSpeed,
   writeSettings,
   type Settings,
 } from './settings.ts';
@@ -420,6 +426,89 @@ describe('repeatTiming', () => {
       intervalMs: 0,
       softDropMs: REPEAT_TIMING.softDropMs,
     });
+  });
+});
+
+describe('move speed', () => {
+  const speeds = ['relaxed', 'standard', 'fast', 'instant'] as const;
+
+  it('Standard is the default timing, and the defaults read as Standard', () => {
+    expect(MOVE_SPEEDS.standard).toMatchObject({
+      delayMs: REPEAT_TIMING.delayMs,
+      intervalMs: REPEAT_TIMING.intervalMs,
+    });
+    expect(moveSpeedOf(DEFAULT_SETTINGS)).toBe('standard');
+  });
+
+  it('each preset sets its delay and interval, reads back as itself, and changes nothing else', () => {
+    for (const speed of speeds) {
+      const s = withMoveSpeed(custom, speed);
+      const { delayMs, intervalMs } = MOVE_SPEEDS[speed];
+      expect(s).toEqual({ ...custom, delayMs, intervalMs });
+      expect(moveSpeedOf(s)).toBe(speed);
+    }
+  });
+
+  it('presets run slowest to fastest and stay within the Advanced slider ranges', () => {
+    const p = speeds.map((s) => MOVE_SPEEDS[s]);
+    for (let i = 1; i < p.length; i++) {
+      expect(p[i]!.delayMs).toBeLessThan(p[i - 1]!.delayMs);
+      expect(p[i]!.intervalMs).toBeLessThan(p[i - 1]!.intervalMs);
+    }
+    for (const { delayMs, intervalMs } of p) {
+      expect(delayMs).toBeGreaterThanOrEqual(DELAY_RANGE.min);
+      expect(delayMs).toBeLessThanOrEqual(DELAY_RANGE.max);
+      expect(intervalMs).toBeGreaterThanOrEqual(INTERVAL_RANGE.min);
+      expect(intervalMs).toBeLessThanOrEqual(INTERVAL_RANGE.max);
+    }
+  });
+
+  it('any other delay and interval reads as Custom', () => {
+    expect(moveSpeedOf({ ...DEFAULT_SETTINGS, delayMs: 168 })).toBe('custom');
+    expect(moveSpeedOf({ ...DEFAULT_SETTINGS, intervalMs: 0 })).toBe('custom');
+    expect(moveSpeedOf(custom)).toBe('custom');
+  });
+
+  it('an older save keeps its in-range timing and shows it as a preset or Custom', () => {
+    const old = (delayMs: number, intervalMs: number) =>
+      parseSettings(JSON.stringify({ ...DEFAULT_SETTINGS, delayMs, intervalMs }));
+    expect(moveSpeedOf(old(250, 66))).toBe('relaxed');
+    expect(old(60, 5)).toMatchObject({ delayMs: 60, intervalMs: 5 });
+    expect(moveSpeedOf(old(60, 5))).toBe('custom');
+    expect(moveSpeedOf(old(999, 5))).toBe('custom');
+    expect(moveSpeedOf(old(999, -1))).toBe('standard');
+    // Numbers as strings or off the whole ms are not a preset's timing: they are defaults.
+    expect(moveSpeedOf(parseSettings('{"delayMs":"250","intervalMs":"66"}'))).toBe('standard');
+    expect(moveSpeedOf(parseSettings('{"delayMs":250.0000001,"intervalMs":66}'))).toBe('custom');
+  });
+
+  it('ignores a stored preset name and timing hidden on the prototype', () => {
+    expect(moveSpeedOf(parseSettings('{"moveSpeed":"relaxed"}'))).toBe('standard');
+    expect(moveSpeedOf(parseSettings('{"moveSpeed":"__proto__"}'))).toBe('standard');
+    expect(moveSpeedOf(parseSettings('{"__proto__":{"delayMs":250,"intervalMs":66}}'))).toBe(
+      'standard',
+    );
+  });
+
+  it('accepts only the preset names, never Custom, inherited names or other types', () => {
+    for (const speed of speeds) expect(isMoveSpeed(speed)).toBe(true);
+    // Look-alike, zero-width and bidi variants of a real name.
+    for (const bad of ['f\u0430st', 'fast\u200b', '\u202efast', 'FAST'])
+      expect(isMoveSpeed(bad)).toBe(false);
+    for (const bad of [
+      'custom',
+      'Standard',
+      '',
+      '__proto__',
+      'constructor',
+      'toString',
+      'fast ',
+      1,
+      null,
+      undefined,
+      {},
+    ])
+      expect(isMoveSpeed(bad)).toBe(false);
   });
 });
 

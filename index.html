@@ -176,14 +176,32 @@
                     <input id="set-ghost-opacity" type="range" min="10" max="60" step="10" />
                   </label>
                 </div>
-                <label class="setting slider">
-                  <span>Auto-repeat delay <output id="set-delay-value"></output></span>
-                  <input id="set-delay" type="range" min="50" max="300" step="1" />
-                </label>
-                <label class="setting slider">
-                  <span>Repeat interval <output id="set-interval-value"></output></span>
-                  <input id="set-interval" type="range" min="0" max="100" step="1" />
-                </label>
+                <div class="setting-group">
+                  <label class="setting slider">
+                    <span>Move speed</span>
+                    <select id="set-move-speed" aria-describedby="set-move-speed-hint">
+                      <option value="relaxed">Relaxed</option>
+                      <option value="standard">Standard</option>
+                      <option value="fast">Fast</option>
+                      <option value="instant">Instant</option>
+                      <option value="custom" disabled>Custom</option>
+                    </select>
+                  </label>
+                  <p id="set-move-speed-hint" class="setting-hint">
+                    How fast a piece slides when you hold ← or →.
+                  </p>
+                  <details class="setting-advanced">
+                    <summary>Advanced</summary>
+                    <label class="setting slider">
+                      <span>Wait before sliding <output id="set-delay-value"></output></span>
+                      <input id="set-delay" type="range" min="50" max="300" step="1" />
+                    </label>
+                    <label class="setting slider">
+                      <span>Time between steps <output id="set-interval-value"></output></span>
+                      <input id="set-interval" type="range" min="0" max="100" step="1" />
+                    </label>
+                  </details>
+                </div>
                 <label class="setting slider">
                   <span>Visual effects</span>
                   <select id="set-effects">
