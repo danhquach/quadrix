@@ -46,8 +46,11 @@ import {
   ghostOpacityIn,
   inRange,
   isEffectsLevel,
+  isMoveSpeed,
   loadSettings,
+  moveSpeedOf,
   repeatTiming,
+  withMoveSpeed,
   writeSettings,
   type Settings,
 } from './ui/settings.ts';
@@ -113,6 +116,11 @@ const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
 const ghostInput = document.querySelector<HTMLInputElement>('#set-ghost')!;
 const ghostOpacityInput = document.querySelector<HTMLInputElement>('#set-ghost-opacity')!;
 const effectsInput = document.querySelector<HTMLSelectElement>('#set-effects')!;
+const moveSpeedInput = document.querySelector<HTMLSelectElement>('#set-move-speed')!;
+// Custom is in the list only while it is the value (Safari ignores hidden options).
+const customSpeed = moveSpeedInput.querySelector<HTMLOptionElement>('option[value="custom"]')!;
+customSpeed.remove();
+const advancedTiming = document.querySelector<HTMLDetailsElement>('.setting-advanced')!;
 const delayInput = document.querySelector<HTMLInputElement>('#set-delay')!;
 const intervalInput = document.querySelector<HTMLInputElement>('#set-interval')!;
 const sfxInput = document.querySelector<HTMLInputElement>('#set-sfx')!;
@@ -1422,6 +1430,15 @@ function renderSettings(): void {
   setText('#set-ghost-opacity-value', `${settings.ghostOpacity}%`);
   for (const [style, input] of styleInputs) input.checked = settings.pieceStyle === style;
   effectsInput.value = settings.effects;
+  const speed = moveSpeedOf(settings);
+  // Custom is shown only while the Advanced sliders set it; it can't be picked. Advanced
+  // opens when Custom appears, so the sliders that set it are in view.
+  if (speed !== 'custom') customSpeed.remove();
+  else if (!customSpeed.isConnected) {
+    moveSpeedInput.append(customSpeed);
+    advancedTiming.open = true;
+  }
+  moveSpeedInput.value = speed;
   delayInput.value = String(settings.delayMs);
   intervalInput.value = String(settings.intervalMs);
   sfxInput.value = String(settings.sfxVolume);
@@ -1534,6 +1551,11 @@ effectsInput.addEventListener('change', () => {
   // The options are the page's own, but the value is checked like stored data anyway.
   if (isEffectsLevel(effectsInput.value))
     changeSettings({ ...settings, effects: effectsInput.value });
+});
+moveSpeedInput.addEventListener('change', () => {
+  // The options are the page's own, but the value is checked like stored data anyway.
+  if (isMoveSpeed(moveSpeedInput.value))
+    changeSettings(withMoveSpeed(settings, moveSpeedInput.value));
 });
 /** What the sliders show, applied while dragging and stored once the drag ends. */
 function sliderSettings(): Settings {

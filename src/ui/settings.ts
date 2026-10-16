@@ -155,6 +155,45 @@ export function writeSettings(storage: () => SaveStorage | null, s: Settings): v
   }
 }
 
+export type MoveSpeed = 'relaxed' | 'standard' | 'fast' | 'instant';
+
+/** Move speed presets, slowest first: each sets the held-key delay and interval. */
+export const MOVE_SPEEDS: Readonly<
+  Record<
+    MoveSpeed,
+    { readonly name: string; readonly delayMs: number; readonly intervalMs: number }
+  >
+> = {
+  relaxed: { name: 'Relaxed', delayMs: 250, intervalMs: 66 },
+  standard: {
+    name: 'Standard',
+    delayMs: REPEAT_TIMING.delayMs,
+    intervalMs: REPEAT_TIMING.intervalMs,
+  },
+  fast: { name: 'Fast', delayMs: 117, intervalMs: 17 },
+  instant: { name: 'Instant', delayMs: 100, intervalMs: 0 },
+};
+
+export function isMoveSpeed(value: unknown): value is MoveSpeed {
+  return typeof value === 'string' && Object.hasOwn(MOVE_SPEEDS, value);
+}
+
+/** The preset `s`'s delay and interval match, or 'custom' (set in Advanced). */
+export function moveSpeedOf(s: Settings): MoveSpeed | 'custom' {
+  for (const [speed, p] of Object.entries(MOVE_SPEEDS) as [
+    MoveSpeed,
+    (typeof MOVE_SPEEDS)[MoveSpeed],
+  ][])
+    if (p.delayMs === s.delayMs && p.intervalMs === s.intervalMs) return speed;
+  return 'custom';
+}
+
+/** `s` with the delay and interval of `speed`. */
+export function withMoveSpeed(s: Settings, speed: MoveSpeed): Settings {
+  const { delayMs, intervalMs } = MOVE_SPEEDS[speed];
+  return { ...s, delayMs, intervalMs };
+}
+
 /** The repeat timing `s` sets; soft drop keeps its own pace. */
 export function repeatTiming(s: Settings): RepeatTiming {
   return { ...REPEAT_TIMING, delayMs: s.delayMs, intervalMs: s.intervalMs };

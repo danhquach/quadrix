@@ -638,7 +638,7 @@ input[type='radio'] {
 .settings-top #settings-reset {
   justify-self: end;
 }
-/* Ghost piece and its opacity, kept together. */
+/* A setting and the ones that refine it, kept together: Ghost, Move speed. */
 .setting-group {
   display: flex;
   flex-direction: column;
@@ -676,6 +676,29 @@ input[type='radio'] {
 .setting output {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+.setting-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+/* Move speed's raw timing, folded away for players who want to fine-tune. */
+.setting-advanced > .setting {
+  margin-top: 4px;
+}
+.setting-advanced summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.setting-advanced summary::before {
+  content: '▸';
+  margin-right: 6px;
+}
+.setting-advanced[open] summary::before {
+  content: '▾';
 }
 .settings-head {
   color: var(--muted);
