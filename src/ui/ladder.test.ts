@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_RUNGS } from '../core/ladder.ts';
-import { LOCKED_SHOWN, PAGE, ladderPage, ladderTop, starText } from './ladder.ts';
+import { MAX_RUNGS, rung, rungStars } from '../core/ladder.ts';
+import { LOCKED_SHOWN, PAGE, ladderPage, ladderTop, objectiveView, starText } from './ladder.ts';
 
 describe('ladder page', () => {
   it('shows a new player rung 1 as current with locked rungs above', () => {
@@ -64,5 +64,36 @@ describe('starText', () => {
   it('shows filled then empty stars', () => {
     expect([0, 1, 2, 3].map(starText)).toEqual(['☆☆☆', '★☆☆', '★★☆', '★★★']);
     expect([-1, 4, NaN, 1.5].map(starText)).toEqual(['☆☆☆', '★★★', '☆☆☆', '☆☆☆']);
+  });
+});
+
+describe('rung objective tracker', () => {
+  const r = rung(1);
+
+  it('shows lines toward the goal, pieces used and both star targets', () => {
+    expect(objectiveView(r, 3, 9)).toEqual({
+      lines: `3 / ${r.goalLines}`,
+      pieces: '9',
+      three: `★★★ ≤ ${r.stars.three}`,
+      two: `★★ ≤ ${r.stars.two}`,
+      threeLost: false,
+      twoLost: false,
+    });
+  });
+
+  it('caps lines at the goal (a final multi-line clear passes it)', () => {
+    expect(objectiveView(r, r.goalLines + 3, 1).lines).toBe(`${r.goalLines} / ${r.goalLines}`);
+  });
+
+  it('marks a target lost only once pieces pass it, matching the stars awarded', () => {
+    for (const index of [1, 2, 3, 7, 64, 1000, MAX_RUNGS]) {
+      const ri = rung(index);
+      for (let pieces = 0; pieces <= ri.stars.two + 2; pieces++) {
+        const v = objectiveView(ri, 0, pieces);
+        const stars = rungStars(ri, pieces);
+        expect(v.threeLost).toBe(stars < 3);
+        expect(v.twoLost).toBe(stars < 2);
+      }
+    }
   });
 });

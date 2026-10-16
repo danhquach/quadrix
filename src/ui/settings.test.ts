@@ -290,13 +290,19 @@ describe('parseSettings', () => {
     expect(parseSettings('{"sfxVolume":1e400}').sfxVolume).toBe(DEFAULT_SETTINGS.sfxVolume);
   });
 
+  it('starts muted until the player turns sound on', () => {
+    expect(DEFAULT_SETTINGS.muted).toBe(true);
+    expect(parseSettings(null).muted).toBe(true);
+    expect(parseSettings('{}').muted).toBe(true);
+  });
+
   it('reads mute as a boolean only, and never from the prototype', () => {
     expect(parseSettings('{"muted":true}').muted).toBe(true);
     expect(parseSettings('{"muted":false}').muted).toBe(false);
     for (const v of ['true', 1, null, [true], { v: true }]) {
-      expect(parseSettings(JSON.stringify({ muted: v })).muted).toBe(false);
+      expect(parseSettings(JSON.stringify({ muted: v })).muted).toBe(DEFAULT_SETTINGS.muted);
     }
-    const polluted = parseSettings('{"__proto__":{"muted":true,"sfxVolume":0}}');
+    const polluted = parseSettings('{"__proto__":{"muted":false,"sfxVolume":0}}');
     expect(polluted).toEqual(DEFAULT_SETTINGS);
     expect(({} as { muted?: boolean }).muted).toBeUndefined();
   });

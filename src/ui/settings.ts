@@ -15,7 +15,7 @@ export interface Settings {
   readonly delayMs: number;
   readonly intervalMs: number;
   readonly keys: KeyMap;
-  /** Every sound off (the HUD's Mute button and M). */
+  /** Every sound off (the HUD's Mute button and M). Muted by default; a saved preference wins. */
   readonly muted: boolean;
   /** Effects and music volume, 0–100. */
   readonly sfxVolume: number;
@@ -38,7 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   delayMs: REPEAT_TIMING.delayMs,
   intervalMs: REPEAT_TIMING.intervalMs,
   keys: DEFAULT_KEYS,
-  muted: false,
+  muted: true,
   sfxVolume: 70,
   musicVolume: 50,
   effects: 'full',

@@ -81,7 +81,7 @@ export class Guide {
     return this.open && this.keyboard;
   }
 
-  /** Whether the Controls link shows: to keyboard players only, like the guide. */
+  /** Whether the Settings switch for the guide shows: to keyboard players only, like the guide. */
   get linkVisible(): boolean {
     return this.keyboard;
   }
@@ -96,7 +96,7 @@ export class Guide {
     this.keyboard = true;
   }
 
-  /** `?` or the Controls link: open it, or close it. Returns true when it closed, to be remembered. */
+  /** `?` or the Settings switch: open it, or close it. Returns true when it closed, to be remembered. */
   toggle(): boolean {
     this.keyboard = true;
     if (this.visible) {
