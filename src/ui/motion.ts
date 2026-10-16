@@ -198,6 +198,13 @@ export class Motion {
     return ROWS - 1 - y < Math.floor(this.overMs / GREY_ROW_MS) + 1;
   }
 
+  /** Whether the game-over grey is still sweeping up the stack (Full only). */
+  greying(): boolean {
+    return (
+      this.overMs !== null && this.levelNow === 'full' && this.overMs < (ROWS - 1) * GREY_ROW_MS
+    );
+  }
+
   private track(game: Game): void {
     this.locks = game.locks;
     this.x = game.state.piece.x;
