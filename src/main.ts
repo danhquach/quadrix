@@ -44,7 +44,16 @@ import {
   writeSettings,
   type Settings,
 } from './ui/settings.ts';
-import { MARKS, PIECE_VARS, blockColors, drawBlock } from './ui/skin.ts';
+import {
+  MARKS,
+  PIECE_STYLES,
+  PIECE_STYLE_NAMES,
+  PIECE_VARS,
+  blockColors,
+  drawBlock,
+  isPieceStyle,
+  type PieceStyle,
+} from './ui/skin.ts';
 import { cuesFor, musicOn, type GameView } from './ui/sound.ts';
 
 // Colors are defined once, as CSS variables in page.css; the canvases read them here.
@@ -332,6 +341,9 @@ function begin(game: Game, countdown: boolean): void {
   if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   guide.start();
   renderGuide();
+  // The board and HUD slide and fade in (page.css times it by the Effects setting).
+  replay(canvas, 'enter');
+  replay($('.hud'), 'enter');
 }
 
 /** A free game in mode `id` (Classic if unknown). */
@@ -565,7 +577,7 @@ function drawCell(
   const colors = grey ? GREY : BLOCKS[color - 1];
   const kind = KINDS[color - 1];
   if (y < 0 || !colors || !kind) return;
-  drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind]);
+  drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind], settings.pieceStyle);
 }
 
 /** The empty well: background, its ambient light and faint grid lines on the cell edges. */
@@ -601,6 +613,8 @@ function renderNext(kind: Kind | null): void {
 function showMenu(menu: HTMLElement, show: boolean, first: HTMLElement): void {
   if (menu.hidden !== show) return;
   menu.hidden = !show;
+  // A leaving panel still shows while it fades: inert, it can't take focus or clicks.
+  menu.inert = !show;
   // Pausing to type a name leaves the focus in the name field.
   if (show && document.activeElement !== nameInput) first.focus({ preventScroll: true });
   else if (menu.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
@@ -618,7 +632,7 @@ function renderOverlay(): void {
   // The result waits for the game-over grey to sweep the stack, then fades in.
   const settling = idle && screen === 'result' && motion.greying();
   const shown = (!session && !settling) || phase !== 'running' || settingsOpen;
-  if (overlay.hidden === shown) overlay.hidden = !shown;
+  if (overlay.hidden === shown) overlay.hidden = overlay.inert = !shown;
   showMenu(settingsPanel, settingsOpen, ghostInput);
   // The other panels wait under Settings until it closes.
   const under = !settingsOpen;
@@ -698,12 +712,9 @@ function render(): void {
   if (changed.lines) pulse('#lines');
   if (changed.level) pulse('#level');
   setText('#pause', phase === 'paused' ? 'Resume' : 'Pause');
-  // No planning while paused: the board and next piece stay hidden until play resumes.
-  if (phase !== 'running') {
-    renderNext(null);
-    setText('#status', phase === 'paused' ? 'Paused' : 'Get ready');
-    return;
-  }
+  // No planning while paused: the overlay covers the board (it is drawn under it, so the
+  // pause blurs it away and the resume reveals it) and the next piece stays hidden.
+  const still = phase !== 'running';
   fx.draw(ctx, 'background', cell);
   if (settings.effects === 'full') {
     const shift = (y: number) => Math.round(motion.rowShift(y) * cell);
@@ -714,8 +725,9 @@ function render(): void {
   if (live) drawPiece(game);
   fx.draw(ctx, 'effects', cell);
   drawGlow(ctx, cell, danger.alpha, DANGER);
-  renderNext(live ? s.next : null);
-  if (!session) setText('#status', $('#result-title').textContent ?? '');
+  renderNext(live && !still ? s.next : null);
+  if (still) setText('#status', phase === 'paused' ? 'Paused' : 'Get ready');
+  else if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
 }
 
@@ -788,12 +800,16 @@ function drawPiece(game: Game): void {
   ctx.globalAlpha = 1;
 }
 
-/** Replay a HUD number's pulse, even when it is already playing. */
-function pulse(id: string): void {
-  const el = $(id);
-  el.classList.remove('pulse');
+/** Restart `el`'s CSS animation `name`, even when it is already playing. */
+function replay(el: HTMLElement, name: string): void {
+  el.classList.remove(name);
   void el.offsetWidth;
-  el.classList.add('pulse');
+  el.classList.add(name);
+}
+
+/** Replay a HUD number's pulse. */
+function pulse(id: string): void {
+  replay($(id), 'pulse');
 }
 
 /** The game and lock count whose award last showed, so each lock shows once. */
@@ -1101,7 +1117,7 @@ function renderGuideKeys(): void {
 renderGuideKeys();
 
 function renderGuide(): void {
-  if (guidePanel.hidden === guide.visible) guidePanel.hidden = !guide.visible;
+  if (guidePanel.hidden === guide.visible) guidePanel.hidden = guidePanel.inert = !guide.visible;
   if (guideToggle.hidden === guide.linkVisible) guideToggle.hidden = !guide.linkVisible;
   guideToggle.setAttribute('aria-expanded', String(guide.visible));
 }
@@ -1280,10 +1296,100 @@ document.querySelector('#set-keys')!.replaceChildren(
   }),
 );
 
+// The Styles tab: one choice per piece style, each with a sample of its blocks.
+const styleInputs = new Map<PieceStyle, HTMLInputElement>();
+/** The sample: a T beside an S, in cells. */
+const SAMPLE: readonly [Kind, number, number][] = [
+  ['T', 0, 0],
+  ['T', 1, 0],
+  ['T', 2, 0],
+  ['T', 1, 1],
+  ['S', 4, 0],
+  ['S', 5, 0],
+  ['S', 3, 1],
+  ['S', 4, 1],
+];
+document.querySelector('#set-styles')!.replaceChildren(
+  ...PIECE_STYLES.map((style) => {
+    const label = document.createElement('label');
+    label.className = 'style-option';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'piece-style';
+    input.value = style;
+    input.addEventListener('change', () => {
+      if (input.checked && isPieceStyle(input.value))
+        changeSettings({ ...settings, pieceStyle: input.value });
+    });
+    styleInputs.set(style, input);
+    const sample = document.createElement('canvas');
+    sample.className = 'style-sample';
+    sample.setAttribute('aria-hidden', 'true');
+    const size = 28;
+    sample.width = 6 * size + 8;
+    sample.height = 2 * size + 8;
+    const c = sample.getContext('2d');
+    if (c) {
+      c.fillStyle = WELL_BG;
+      c.fillRect(0, 0, sample.width, sample.height);
+      for (const [kind, x, y] of SAMPLE) {
+        const colors = BLOCKS[colorIndex(kind) - 1]!;
+        drawBlock(c, 4 + x * size, 4 + y * size, size, colors, MARKS[kind], style);
+      }
+    }
+    const name = document.createElement('span');
+    name.textContent = PIECE_STYLE_NAMES[style];
+    label.append(input, sample, name);
+    return label;
+  }),
+);
+
+// Settings tabs: arrow keys, Home and End move between them, as usual for tabs.
+const tabs = [...document.querySelectorAll<HTMLButtonElement>('#settings [role="tab"]')];
+function selectTab(tab: HTMLButtonElement, focus: boolean): void {
+  // A key waiting to be bound on General gives up when its tab goes.
+  if (binding && tab.getAttribute('aria-selected') !== 'true') {
+    binding = null;
+    setText('#settings-note', '');
+    renderSettings();
+  }
+  for (const t of tabs) {
+    const on = t === tab;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+    const panel = $(`#${t.getAttribute('aria-controls')}`);
+    if (panel.hidden === on) panel.hidden = !on;
+  }
+  if (focus) tab.focus({ preventScroll: true });
+}
+for (const tab of tabs) {
+  tab.addEventListener('click', () => selectTab(tab, false));
+  tab.addEventListener('keydown', (e) => {
+    const i = tabs.indexOf(tab);
+    const n = tabs.length;
+    const to =
+      e.key === 'ArrowRight'
+        ? tabs[(i + 1) % n]
+        : e.key === 'ArrowLeft'
+          ? tabs[(i - 1 + n) % n]
+          : e.key === 'Home'
+            ? tabs[0]
+            : e.key === 'End'
+              ? tabs[n - 1]
+              : undefined;
+    if (!to) return;
+    e.preventDefault();
+    // Moving between tabs, not a key for Settings to bind.
+    e.stopPropagation();
+    selectTab(to, true);
+  });
+}
+
 function renderSettings(): void {
   ghostInput.checked = settings.ghost;
   ghostOpacityInput.value = String(settings.ghostOpacity);
   setText('#set-ghost-opacity-value', `${settings.ghostOpacity}%`);
+  for (const [style, input] of styleInputs) input.checked = settings.pieceStyle === style;
   effectsInput.value = settings.effects;
   delayInput.value = String(settings.delayMs);
   intervalInput.value = String(settings.intervalMs);
@@ -1317,7 +1423,7 @@ function applySettings(next: Settings): void {
   danger.level = settings.effects;
   shake.level = settings.effects;
   ambient.level = settings.effects;
-  // page.css picks the HUD pulse and the result's entrance by it.
+  // page.css times every UI transition by it.
   document.documentElement.dataset.effects = settings.effects;
   keyRepeat.setTiming(repeatTiming(settings));
   sound.setLevels(settings.muted, settings.sfxVolume, settings.musicVolume);
@@ -1340,6 +1446,7 @@ function openSettings(): void {
   keyRepeat.clear();
   settingsOpen = true;
   binding = null;
+  selectTab(tabs[0]!, false);
   setText('#settings-note', '');
   renderSettings();
   renderOverlay();

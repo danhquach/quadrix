@@ -10,20 +10,24 @@
     <main class="app">
       <section class="side">
         <h1>Quadrix</h1>
-        <label class="name">
-          Name
-          <input
-            id="name"
-            type="text"
-            maxlength="64"
-            autocomplete="off"
-            autocapitalize="off"
-            spellcheck="false"
-          />
-        </label>
-        <p id="best-row" class="best">Best <span id="best">0</span></p>
+        <div class="card player">
+          <label class="name">
+            <span class="label">Name</span>
+            <input
+              id="name"
+              type="text"
+              maxlength="64"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+            />
+          </label>
+          <p id="best-row" class="best"><span class="label">Best</span> <span id="best">0</span></p>
+        </div>
         <div class="controls">
-          <button id="pause" type="button" tabindex="-1" data-action="pause">Pause</button>
+          <button id="pause" class="primary" type="button" tabindex="-1" data-action="pause">
+            Pause
+          </button>
           <button id="open-settings" type="button" tabindex="-1">Settings</button>
           <button id="mute" type="button" tabindex="-1" aria-pressed="false">Mute</button>
           <button
@@ -37,7 +41,7 @@
             Controls
           </button>
         </div>
-        <div class="hud">
+        <div class="hud card">
           <p id="rung-row" class="stat" hidden>
             <span class="label">Rung</span> <span id="rung" class="value">1</span>
           </p>
@@ -68,7 +72,7 @@
           <p id="countdown" class="countdown"></p>
           <div id="menu" class="pause-menu" role="group" aria-label="Main menu" hidden>
             <p class="pause-title">Play</p>
-            <button id="play-ladder" type="button">Ladder</button>
+            <button id="play-ladder" class="primary" type="button">Ladder</button>
             <button type="button" data-mode="classic">Classic</button>
             <button type="button" data-mode="override">Override</button>
             <button id="open-cloud" type="button" hidden>Cloud save</button>
@@ -116,42 +120,84 @@
                 Reset
               </button>
             </div>
-            <div class="setting-pair">
-              <label class="setting check">
-                <input id="set-ghost" type="checkbox" />
-                Ghost piece
-              </label>
-              <label class="setting check">
-                Effects
-                <select id="set-effects">
-                  <option value="full">Full</option>
-                  <option value="reduced">Reduced</option>
-                  <option value="off">Off</option>
-                </select>
-              </label>
+            <div class="tabs" role="tablist" aria-label="Settings sections">
+              <button
+                id="tab-general"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="settings-general"
+              >
+                General
+              </button>
+              <button
+                id="tab-styles"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="settings-styles"
+                tabindex="-1"
+              >
+                Styles
+              </button>
             </div>
-            <label class="setting slider">
-              <span>Ghost opacity <output id="set-ghost-opacity-value"></output></span>
-              <input id="set-ghost-opacity" type="range" min="10" max="60" step="10" />
-            </label>
-            <label class="setting slider">
-              <span>Auto-repeat delay <output id="set-delay-value"></output></span>
-              <input id="set-delay" type="range" min="50" max="300" step="1" />
-            </label>
-            <label class="setting slider">
-              <span>Repeat interval <output id="set-interval-value"></output></span>
-              <input id="set-interval" type="range" min="0" max="100" step="1" />
-            </label>
-            <label class="setting slider">
-              <span>Effects volume <output id="set-sfx-value"></output></span>
-              <input id="set-sfx" type="range" min="0" max="100" step="1" />
-            </label>
-            <label class="setting slider">
-              <span>Music volume <output id="set-music-value"></output></span>
-              <input id="set-music" type="range" min="0" max="100" step="1" />
-            </label>
-            <p class="settings-head">Keys</p>
-            <div id="set-keys" class="set-keys"></div>
+            <div class="tab-panels">
+              <div
+                id="settings-general"
+                class="tab-panel"
+                role="tabpanel"
+                aria-labelledby="tab-general"
+              >
+                <div class="setting-pair">
+                  <label class="setting check">
+                    <input id="set-ghost" type="checkbox" />
+                    Ghost piece
+                  </label>
+                  <label class="setting check">
+                    Effects
+                    <select id="set-effects">
+                      <option value="full">Full</option>
+                      <option value="reduced">Reduced</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="setting slider">
+                  <span>Ghost opacity <output id="set-ghost-opacity-value"></output></span>
+                  <input id="set-ghost-opacity" type="range" min="10" max="60" step="10" />
+                </label>
+                <label class="setting slider">
+                  <span>Auto-repeat delay <output id="set-delay-value"></output></span>
+                  <input id="set-delay" type="range" min="50" max="300" step="1" />
+                </label>
+                <label class="setting slider">
+                  <span>Repeat interval <output id="set-interval-value"></output></span>
+                  <input id="set-interval" type="range" min="0" max="100" step="1" />
+                </label>
+                <label class="setting slider">
+                  <span>Effects volume <output id="set-sfx-value"></output></span>
+                  <input id="set-sfx" type="range" min="0" max="100" step="1" />
+                </label>
+                <label class="setting slider">
+                  <span>Music volume <output id="set-music-value"></output></span>
+                  <input id="set-music" type="range" min="0" max="100" step="1" />
+                </label>
+                <p class="settings-head">Keys</p>
+                <div id="set-keys" class="set-keys"></div>
+              </div>
+              <div
+                id="settings-styles"
+                class="tab-panel"
+                role="tabpanel"
+                aria-labelledby="tab-styles"
+                hidden
+              >
+                <fieldset class="styles">
+                  <legend class="settings-head">Pieces</legend>
+                  <div id="set-styles" class="style-options"></div>
+                </fieldset>
+              </div>
+            </div>
             <p id="settings-note" class="settings-note" aria-live="polite"></p>
           </div>
           <div id="ladder" class="pause-menu ladder" role="group" aria-label="Ladder" hidden>
@@ -166,16 +212,16 @@
             <p id="result-title" class="pause-title"></p>
             <p id="result-stars" class="result-stars"></p>
             <p id="result-detail" class="result-detail"></p>
-            <button id="result-next" type="button">Next</button>
+            <button id="result-next" class="primary" type="button">Next</button>
             <button id="result-retry" type="button">Retry</button>
             <button id="result-back" type="button">Ladder</button>
           </div>
           <div id="pause-menu" class="pause-menu" role="group" aria-label="Paused">
             <p class="pause-title">Paused</p>
-            <button id="resume" type="button">Resume</button>
+            <button id="resume" class="primary" type="button">Resume</button>
             <button id="restart" type="button">Restart</button>
             <button id="pause-settings" type="button">Settings</button>
-            <button id="quit" type="button">Quit</button>
+            <button id="quit" class="quiet-danger" type="button">Quit</button>
           </div>
           <div
             id="resume-prompt"
@@ -185,7 +231,7 @@
             hidden
           >
             <p class="pause-title">Resume game?</p>
-            <button id="resume-saved" type="button">Resume</button>
+            <button id="resume-saved" class="primary" type="button">Resume</button>
             <button id="discard-saved" type="button">Discard</button>
           </div>
         </div>

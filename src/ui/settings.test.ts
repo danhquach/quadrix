@@ -49,6 +49,7 @@ const custom: Settings = {
   sfxVolume: 0,
   musicVolume: 100,
   effects: 'off',
+  pieceStyle: 'neon',
 };
 
 describe('effects setting', () => {
@@ -173,6 +174,43 @@ describe('ghost opacity setting', () => {
   });
 });
 
+describe('piece style setting', () => {
+  it('defaults to Bevel (style A)', () => {
+    expect(DEFAULT_SETTINGS.pieceStyle).toBe('bevel');
+    expect(parseSettings(null).pieceStyle).toBe('bevel');
+    expect(parseSettings('{}', true).pieceStyle).toBe('bevel');
+  });
+
+  it('reads back each style', () => {
+    for (const pieceStyle of ['bevel', 'gem', 'neon'] as const)
+      expect(parseSettings(JSON.stringify({ pieceStyle })).pieceStyle).toBe(pieceStyle);
+  });
+
+  it('refuses anything but the three styles, and keeps the other settings', () => {
+    for (const v of [
+      'GEM',
+      ' gem',
+      'gem\u200b',
+      '\u202egem',
+      'gеm', // Cyrillic e, a look-alike
+      '__proto__',
+      'constructor',
+      '<img src=x onerror=alert(1)>',
+      '',
+      'x'.repeat(500),
+      0,
+      true,
+      null,
+      ['gem'],
+      { gem: true },
+    ]) {
+      const s = parseSettings(JSON.stringify({ ...custom, pieceStyle: v }));
+      expect(s).toEqual({ ...custom, pieceStyle: 'bevel' });
+    }
+    expect(parseSettings('{"__proto__":{"pieceStyle":"neon"}}').pieceStyle).toBe('bevel');
+  });
+});
+
 describe('parseSettings', () => {
   it('reads back what was written', () => {
     expect(parseSettings(JSON.stringify(custom))).toEqual(custom);
@@ -225,6 +263,7 @@ describe('parseSettings', () => {
         sfxVolume: 0,
         musicVolume: 100,
         effects: 'shake',
+        pieceStyle: 'glass',
       }),
     );
     expect(s).toEqual({
@@ -234,6 +273,7 @@ describe('parseSettings', () => {
       delayMs: 100,
       intervalMs: 33,
       effects: 'full',
+      pieceStyle: 'bevel',
     });
   });
 
