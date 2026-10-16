@@ -16,6 +16,7 @@ import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { Effects } from './ui/effects.ts';
 import { fitBoard } from './ui/fit.ts';
+import { Motion } from './ui/motion.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
 import { isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
@@ -50,6 +51,8 @@ const cssColor = (name: string) => theme.getPropertyValue(name).trim();
 const BLOCKS = PIECE_VARS.map((v) => blockColors(cssColor(v)));
 const WELL_BG = cssColor('--well-bg') || '#000';
 const GRID = cssColor('--grid') || '#222';
+/** Every block of a stack that topped out, once the game-over sweep reaches it. */
+const GREY = blockColors(cssColor('--stack-over') || '#5d6275');
 /** Opacity of the ghost piece: the falling piece's landing spot. */
 const GHOST_ALPHA = 0.3;
 
@@ -127,6 +130,8 @@ const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').match
 let settings: Settings = loadSettings(storage, reducedMotion());
 /** Effects over the board, fed by the game's events; presentation only. */
 const fx = new Effects(settings.effects);
+/** How the board moves between game states: slides, drops, squash and the game-over grey. */
+const motion = new Motion(settings.effects);
 /** The previous frame's time, for the effects clock. */
 let lastFrame: number | null = null;
 /** Settings covers the board, over whatever else shows; a game in play stays paused under it. */
@@ -264,6 +269,7 @@ function begin(game: Game, countdown: boolean): void {
   result = null;
   rungNow = game.rung === null ? null : rung(game.rung);
   fx.clear();
+  motion.clear();
   session = new Session(game, performance.now());
   if (countdown) {
     session.pause();
@@ -300,6 +306,7 @@ function resumeSaved(): void {
   rungNow = saved.rung === null ? null : rung(saved.rung);
   result = null;
   fx.clear();
+  motion.clear();
   session = new Session(saved, performance.now());
   session.pause();
   savedLocks = session.game.locks;
@@ -345,7 +352,9 @@ function quit(): void {
 function settle(): void {
   if (!session) return;
   // First, while the game is still in play: a game that just ended plays its last events.
-  fx.handle(session.game.takeEvents());
+  const events = session.game.takeEvents();
+  fx.handle(events);
+  motion.observe(session.game, events);
   showAward();
   const game = session.game;
   const outcome = rungNow
@@ -495,8 +504,9 @@ function drawCell(
   color: number,
   ox = 0,
   oy = 0,
+  grey = false,
 ): void {
-  const colors = BLOCKS[color - 1];
+  const colors = grey ? GREY : BLOCKS[color - 1];
   const kind = KINDS[color - 1];
   if (y < 0 || !colors || !kind) return;
   drawBlock(c, ox + x * size, oy + y * size, size, colors, MARKS[kind]);
@@ -626,25 +636,73 @@ function render(): void {
     return;
   }
   fx.draw(ctx, 'background', cell);
-  s.board.forEach((row, y) => row.forEach((c, x) => c && drawCell(ctx, cell, x, y, c)));
+  drawStack(s.board);
   fx.draw(ctx, 'board', cell);
   const live = session !== null && !s.over;
-  if (live) {
-    const color = colorIndex(s.piece.kind);
-    const cells = cellsOf(s.piece.kind, s.piece.rot);
-    // The ghost goes under the piece; a resting piece covers it, so skip it there.
-    const ghost = game.ghost();
-    if (settings.ghost && ghost.y !== s.piece.y) {
-      ctx.globalAlpha = GHOST_ALPHA;
-      for (const [cx, cy] of cells) drawCell(ctx, cell, ghost.x + cx, ghost.y + cy, color);
-      ctx.globalAlpha = 1;
-    }
-    for (const [cx, cy] of cells) drawCell(ctx, cell, s.piece.x + cx, s.piece.y + cy, color);
-  }
+  if (live) drawPiece(game);
   fx.draw(ctx, 'effects', cell);
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
+}
+
+/** The locked blocks, as the motion has them: dropping after a clear, squashed, greyed. */
+function drawStack(board: readonly (readonly number[])[]): void {
+  for (const { y, colors } of motion.held())
+    colors.forEach((c, x) => c && drawCell(ctx, cell, x, y, c));
+  board.forEach((row, y) => {
+    const oy = Math.round(motion.rowShift(y) * cell);
+    const grey = motion.greyed(y);
+    row.forEach((c, x) => c && !motion.hides(x, y) && drawCell(ctx, cell, x, y, c, 0, oy, grey));
+  });
+  const squash = motion.squashed();
+  if (!squash) return;
+  const xs = squash.cells.map(([x]) => x);
+  const ys = squash.cells.map(([, y]) => y);
+  // Scaled about the bottom centre of the piece, where it hit.
+  const px = ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * cell;
+  const py = (Math.max(...ys) + 1) * cell;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(squash.sx, squash.sy);
+  ctx.translate(-px, -py);
+  for (const [x, y] of squash.cells) drawCell(ctx, cell, x, y, colorIndex(squash.kind));
+  ctx.restore();
+}
+
+/** The falling piece and its ghost, sliding and fading in as the motion has them. */
+function drawPiece(game: Game): void {
+  const p = game.state.piece;
+  const color = colorIndex(p.kind);
+  const cells = cellsOf(p.kind, p.rot);
+  const look = motion.piece();
+  const dx = Math.round(look.dx * cell);
+  const dy = Math.round(look.dy * cell);
+  // The ghost goes under the piece; a resting piece covers it, so skip it there. It
+  // marks where the piece lands now, so for the moment the stack drops after a clear it
+  // may sit inside the rows still dropping.
+  const ghost = game.ghost();
+  if (settings.ghost && ghost.y !== p.y) {
+    const g = motion.ghost(GHOST_ALPHA);
+    ctx.globalAlpha = g.alpha;
+    const gx = Math.round(g.dx * cell);
+    for (const [cx, cy] of cells) drawCell(ctx, cell, ghost.x + cx, ghost.y + cy, color, gx);
+  }
+  ctx.globalAlpha = look.alpha;
+  ctx.save();
+  if (look.scale !== 1) {
+    // Scaled about the centre of the piece's cells.
+    const xs = cells.map(([x]) => p.x + x);
+    const ys = cells.map(([, y]) => p.y + y);
+    const px = ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * cell + dx;
+    const py = ((Math.min(...ys) + Math.max(...ys) + 1) / 2) * cell + dy;
+    ctx.translate(px, py);
+    ctx.scale(look.scale, look.scale);
+    ctx.translate(-px, -py);
+  }
+  for (const [cx, cy] of cells) drawCell(ctx, cell, p.x + cx, p.y + cy, color, dx, dy);
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 /** The game and lock count whose award last showed, so each lock shows once. */
@@ -702,7 +760,9 @@ function loop(now: number): void {
   // Settle hands this frame's events to the effects, so they start this frame.
   settle();
   // A pause or countdown freezes every effect where it is.
-  fx.frame(now - (lastFrame ?? now), session !== null && session.phase !== 'running');
+  const frozen = session !== null && session.phase !== 'running';
+  fx.frame(now - (lastFrame ?? now), frozen);
+  motion.frame(now - (lastFrame ?? now), frozen);
   lastFrame = now;
   playSounds();
   render();
@@ -1156,6 +1216,7 @@ function renderSettings(): void {
 function applySettings(next: Settings): void {
   settings = next;
   fx.level = settings.effects;
+  motion.level = settings.effects;
   keyRepeat.setTiming(repeatTiming(settings));
   sound.setLevels(settings.muted, settings.sfxVolume, settings.musicVolume);
   renderSettings();
