@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COLS, ROWS } from './game.ts';
 import { MAX_GARBAGE_ROWS, rung, rungOutcome, rungStars, startRung } from './ladder.ts';
 import { PieceBag, cellsOf } from './pieces.ts';
+import { newProfile, recordRung } from './profile.ts';
 
 const SAMPLES = [1, 10, 100, 1_000, 100_000];
 
@@ -109,6 +110,40 @@ describe('rung play', () => {
     expect(rungStars(r, r.stars.two)).toBe(2);
     expect(rungStars(r, r.stars.two + 1)).toBe(1);
     expect(rungStars(r, 1e9)).toBe(1);
+  });
+
+  // Golden values from the QX-032 balance check: changing these changes every player's targets.
+  it.each([
+    // [rung, goal, garbage rows, par, three, two]
+    [1, 4, 0, 10, 15, 20],
+    [2, 6, 0, 15, 21, 26],
+    [4, 8, 1, 18, 24, 30],
+    [8, 10, 1, 23, 30, 36],
+    [16, 12, 2, 26, 33, 40],
+    [1_024, 24, 5, 49, 59, 69],
+    [65_536, 36, 8, 72, 85, 98],
+    [100_000, 36, 8, 72, 85, 98],
+  ])('pins rung %i star targets', (n, goal, garbage, par, three, two) => {
+    const r = rung(n);
+    expect([r.goalLines, garbageRows(r)]).toEqual([goal, garbage]);
+    expect(Math.ceil((goal * COLS - garbage * (COLS - 1)) / 4)).toBe(par);
+    expect(r.stars).toEqual({ three, two });
+  });
+
+  it('stars earned under older targets are kept when a retry earns fewer', () => {
+    const earned = { ...newProfile(), stars: '33' };
+    const r = rung(1);
+    const p = recordRung(earned, 1, rungStars(r, r.stars.two + 1));
+    expect(p.stars).toBe('33');
+  });
+
+  it('star targets leave room over a perfect fill and stay ordered', () => {
+    for (const n of [...SAMPLES, 2 ** 20, Number.MAX_SAFE_INTEGER]) {
+      const r = rung(n);
+      const par = Math.ceil((r.goalLines * COLS - garbageRows(r) * (COLS - 1)) / 4);
+      expect(r.stars.three).toBeGreaterThan(par);
+      expect(r.stars.two).toBeGreaterThan(r.stars.three);
+    }
   });
 });
 

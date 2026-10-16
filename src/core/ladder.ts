@@ -31,8 +31,8 @@ export type RungOutcome = 'playing' | 'passed' | 'failed';
 
 /**
  * Rung `index` (a positive safe integer). Saved games are checked against it (see
- * snapshot.ts), so changing the formula or LADDER_SEED discards rungs in progress.
- * Difficulty grows with each doubling of the
+ * snapshot.ts), so changing the goal, start level, board or LADDER_SEED discards rungs in
+ * progress; star targets are not part of a save. Difficulty grows with each doubling of the
  * index and never stops: goal and starting level rise forever, garbage up to its cap.
  */
 export function rung(index: number): Rung {
@@ -58,15 +58,21 @@ export function rung(index: number): Rung {
     }
   }
 
-  // Par: pieces to fill the goal's rows from empty (10 cells a row, 4 a piece).
-  const par = Math.ceil((goalLines * COLS) / 4);
+  // Par: pieces for a perfect fill of the goal's rows (10 cells a row, 4 a piece), where
+  // each garbage row cleared already holds COLS - 1 cells.
+  const par = Math.ceil((goalLines * COLS - garbage * (COLS - 1)) / 4);
   return {
     index,
     goalLines,
     startLevel: 1 + k,
     board,
     pieceSeed: Math.floor(random() * 2 ** 32),
-    stars: { three: Math.ceil(par * 1.25), two: Math.ceil(par * 1.6) },
+    // Slack over par for leftover stack and mistakes; it grows with the goal because longer
+    // rungs give more chances to slip (see the balance report on QX-032).
+    stars: {
+      three: par + 4 + Math.ceil(goalLines / 4),
+      two: par + 8 + Math.ceil(goalLines / 2),
+    },
   };
 }
 
