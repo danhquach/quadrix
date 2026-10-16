@@ -36,6 +36,7 @@ import {
   VOLUME_RANGE,
   bindKey,
   defaultSettings,
+  ghostOpacityIn,
   inRange,
   isEffectsLevel,
   loadSettings,
@@ -57,8 +58,6 @@ const WELL_BG = cssColor('--well-bg') || '#000';
 const GRID = cssColor('--grid') || '#222';
 /** Every block of a stack that topped out, once the game-over sweep reaches it. */
 const GREY = blockColors(cssColor('--stack-over') || '#5d6275');
-/** Opacity of the ghost piece: the falling piece's landing spot. */
-const GHOST_ALPHA = 0.3;
 /** The edge glow while the stack is near the top. */
 const DANGER = cssColor('--danger') || '#ff4d5e';
 
@@ -97,6 +96,7 @@ const awardText = document.querySelector<HTMLElement>('#award')!;
 const openSettingsBtn = document.querySelector<HTMLButtonElement>('#open-settings')!;
 const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
 const ghostInput = document.querySelector<HTMLInputElement>('#set-ghost')!;
+const ghostOpacityInput = document.querySelector<HTMLInputElement>('#set-ghost-opacity')!;
 const effectsInput = document.querySelector<HTMLSelectElement>('#set-effects')!;
 const delayInput = document.querySelector<HTMLInputElement>('#set-delay')!;
 const intervalInput = document.querySelector<HTMLInputElement>('#set-interval')!;
@@ -766,7 +766,7 @@ function drawPiece(game: Game): void {
   // may sit inside the rows still dropping.
   const ghost = game.ghost();
   if (settings.ghost && ghost.y !== p.y) {
-    const g = motion.ghost(GHOST_ALPHA);
+    const g = motion.ghost(settings.ghostOpacity / 100);
     ctx.globalAlpha = g.alpha;
     const gx = Math.round(g.dx * cell);
     for (const [cx, cy] of cells) drawCell(ctx, cell, ghost.x + cx, ghost.y + cy, color, gx);
@@ -1282,6 +1282,8 @@ document.querySelector('#set-keys')!.replaceChildren(
 
 function renderSettings(): void {
   ghostInput.checked = settings.ghost;
+  ghostOpacityInput.value = String(settings.ghostOpacity);
+  setText('#set-ghost-opacity-value', `${settings.ghostOpacity}%`);
   effectsInput.value = settings.effects;
   delayInput.value = String(settings.delayMs);
   intervalInput.value = String(settings.intervalMs);
@@ -1395,17 +1397,18 @@ effectsInput.addEventListener('change', () => {
   if (isEffectsLevel(effectsInput.value))
     changeSettings({ ...settings, effects: effectsInput.value });
 });
-/** The timing and volumes the sliders show, applied while dragging and stored once the drag ends. */
+/** What the sliders show, applied while dragging and stored once the drag ends. */
 function sliderSettings(): Settings {
   return {
     ...settings,
+    ghostOpacity: ghostOpacityIn(Number(ghostOpacityInput.value)) ?? settings.ghostOpacity,
     delayMs: inRange(Number(delayInput.value), DELAY_RANGE) ?? settings.delayMs,
     intervalMs: inRange(Number(intervalInput.value), INTERVAL_RANGE) ?? settings.intervalMs,
     sfxVolume: inRange(Number(sfxInput.value), VOLUME_RANGE) ?? settings.sfxVolume,
     musicVolume: inRange(Number(musicInput.value), VOLUME_RANGE) ?? settings.musicVolume,
   };
 }
-for (const slider of [delayInput, intervalInput, sfxInput, musicInput]) {
+for (const slider of [ghostOpacityInput, delayInput, intervalInput, sfxInput, musicInput]) {
   slider.addEventListener('input', () => applySettings(sliderSettings()));
   slider.addEventListener('change', () => changeSettings(sliderSettings()));
 }

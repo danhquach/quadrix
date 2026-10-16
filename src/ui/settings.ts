@@ -8,6 +8,8 @@ export const SETTINGS_KEY = 'quadrix.settings';
 
 export interface Settings {
   readonly ghost: boolean;
+  /** Ghost piece opacity in percent: 10–60 in steps of 10. */
+  readonly ghostOpacity: number;
   /** Held-key auto-repeat: delay before the first repeat, then the interval (0 is instant). */
   readonly delayMs: number;
   readonly intervalMs: number;
@@ -24,9 +26,12 @@ export interface Settings {
 export const DELAY_RANGE = { min: 50, max: 300 } as const;
 export const INTERVAL_RANGE = { min: 0, max: 100 } as const;
 export const VOLUME_RANGE = { min: 0, max: 100 } as const;
+export const GHOST_OPACITY_RANGE = { min: 10, max: 60 } as const;
+export const GHOST_OPACITY_STEP = 10;
 
 export const DEFAULT_SETTINGS: Settings = {
   ghost: true,
+  ghostOpacity: 20,
   delayMs: REPEAT_TIMING.delayMs,
   intervalMs: REPEAT_TIMING.intervalMs,
   keys: DEFAULT_KEYS,
@@ -61,6 +66,12 @@ export function inRange(value: unknown, range: { min: number; max: number }): nu
     (value as number) <= range.max
     ? (value as number)
     : null;
+}
+
+/** A ghost opacity on the 10% steps, or null. */
+export function ghostOpacityIn(value: unknown): number | null {
+  const v = inRange(value, GHOST_OPACITY_RANGE);
+  return v !== null && v % GHOST_OPACITY_STEP === 0 ? v : null;
 }
 
 /** The value at an own property of `o`, so inherited names ('__proto__') read as missing. */
@@ -105,6 +116,7 @@ export function parseSettings(text: string | null, reducedMotion = false): Setti
   const effects = own(raw, 'effects');
   return {
     ghost: typeof ghost === 'boolean' ? ghost : DEFAULT_SETTINGS.ghost,
+    ghostOpacity: ghostOpacityIn(own(raw, 'ghostOpacity')) ?? DEFAULT_SETTINGS.ghostOpacity,
     delayMs: inRange(own(raw, 'delayMs'), DELAY_RANGE) ?? DEFAULT_SETTINGS.delayMs,
     intervalMs: inRange(own(raw, 'intervalMs'), INTERVAL_RANGE) ?? DEFAULT_SETTINGS.intervalMs,
     keys: parseKeys(own(raw, 'keys')),

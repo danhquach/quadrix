@@ -9,6 +9,7 @@ import {
   SETTINGS_KEY,
   bindKey,
   defaultSettings,
+  ghostOpacityIn,
   loadSettings,
   parseSettings,
   repeatTiming,
@@ -40,6 +41,7 @@ const throwing: SaveStorage = {
 
 const custom: Settings = {
   ghost: false,
+  ghostOpacity: 60,
   delayMs: 120,
   intervalMs: 0,
   keys: { left: 'a', right: 'd', rotate: 'w', softDrop: 's', hardDrop: ' ', pause: 'p' },
@@ -94,6 +96,83 @@ describe('effects setting', () => {
   });
 });
 
+describe('ghost opacity setting', () => {
+  const opacity = (v: unknown) => parseSettings(JSON.stringify({ ghostOpacity: v })).ghostOpacity;
+
+  it('defaults to 20% with no saved setting', () => {
+    expect(DEFAULT_SETTINGS.ghostOpacity).toBe(20);
+    expect(parseSettings(null).ghostOpacity).toBe(20);
+    expect(parseSettings('{}').ghostOpacity).toBe(20);
+    expect(defaultSettings(true).ghostOpacity).toBe(20);
+  });
+
+  it('keeps every step from 10% to 60%', () => {
+    for (const v of [10, 20, 30, 40, 50, 60]) expect(opacity(v)).toBe(v);
+  });
+
+  it('loads the default for corrupt, hostile or out-of-range values, without throwing', () => {
+    for (const v of [
+      -1,
+      0,
+      5,
+      15,
+      25.5,
+      70,
+      100,
+      1e21,
+      Number.MAX_SAFE_INTEGER + 1,
+      'abc',
+      '30',
+      'x'.repeat(900),
+      '\u202e30',
+      '3\u200b0',
+      null,
+      true,
+      [30],
+      { valueOf: 30 },
+    ]) {
+      expect(opacity(v)).toBe(20);
+    }
+    // Hand-edited records: NaN and Infinity are not JSON, 1e400 parses to Infinity.
+    for (const text of [
+      '{"ghostOpacity":NaN}',
+      '{"ghostOpacity":Infinity}',
+      '{"ghostOpacity":1e400}',
+      '{"ghostOpacity":-0.0}',
+      `{"ghostOpacity":"${'9'.repeat(2000)}"}`,
+    ]) {
+      expect(() => parseSettings(text)).not.toThrow();
+      expect(parseSettings(text).ghostOpacity).toBe(20);
+    }
+  });
+
+  it('a bad opacity leaves the other settings as stored', () => {
+    const s = parseSettings(JSON.stringify({ ...custom, ghostOpacity: 5 }));
+    expect(s).toEqual({ ...custom, ghostOpacity: 20 });
+  });
+
+  it('is never read from the prototype', () => {
+    expect(parseSettings('{"__proto__":{"ghostOpacity":40}}').ghostOpacity).toBe(20);
+    expect(({} as Record<string, unknown>).ghostOpacity).toBeUndefined();
+  });
+
+  it('ghostOpacityIn accepts only whole 10% steps in range', () => {
+    expect(ghostOpacityIn(10)).toBe(10);
+    expect(ghostOpacityIn(60)).toBe(60);
+    for (const v of [Number.NaN, 9, 61, 35, 20.0001, '20', undefined]) {
+      expect(ghostOpacityIn(v)).toBeNull();
+    }
+  });
+
+  it('round-trips through storage at every step', () => {
+    for (const v of [10, 20, 30, 40, 50, 60]) {
+      const store = memory();
+      writeSettings(() => store, { ...DEFAULT_SETTINGS, ghostOpacity: v });
+      expect(loadSettings(() => store).ghostOpacity).toBe(v);
+    }
+  });
+});
+
 describe('parseSettings', () => {
   it('reads back what was written', () => {
     expect(parseSettings(JSON.stringify(custom))).toEqual(custom);
@@ -138,6 +217,7 @@ describe('parseSettings', () => {
     const s = parseSettings(
       JSON.stringify({
         ghost: 'no',
+        ghostOpacity: 'abc',
         delayMs: 100,
         intervalMs: '20',
         keys: custom.keys,
@@ -147,7 +227,14 @@ describe('parseSettings', () => {
         effects: 'shake',
       }),
     );
-    expect(s).toEqual({ ...custom, ghost: true, delayMs: 100, intervalMs: 33, effects: 'full' });
+    expect(s).toEqual({
+      ...custom,
+      ghost: true,
+      ghostOpacity: 20,
+      delayMs: 100,
+      intervalMs: 33,
+      effects: 'full',
+    });
   });
 
   it('keeps the volume range edges and refuses anything else', () => {
