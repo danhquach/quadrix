@@ -240,8 +240,9 @@ export class Game {
     this.b2b = award.b2b;
     s.score += award.points;
     if (award.points > 0 || award.labels.length > 0) {
-      const { points, labels } = award;
-      this.emit({ type: 'award', points, labels: [...labels], level: s.level });
+      const { points, labels, streak } = award;
+      const combo = Math.max(0, streak - 1);
+      this.emit({ type: 'award', points, labels: [...labels], level: s.level, combo, fullClear });
     }
     if (cleared > 0) {
       s.lines += cleared;
