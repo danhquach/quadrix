@@ -1,3 +1,4 @@
+import { EFFECTS_LEVELS, type EffectsLevel } from './effects.ts';
 import { ACTIONS, type Action } from './gestures.ts';
 import { DEFAULT_KEYS, MUTE_KEY, isBindable, keyLabel, normalKey, type KeyMap } from './keys.ts';
 import { REPEAT_TIMING, type RepeatTiming } from './repeat.ts';
@@ -16,6 +17,8 @@ export interface Settings {
   /** Effects and music volume, 0–100. */
   readonly sfxVolume: number;
   readonly musicVolume: number;
+  /** How much animation plays over the board. */
+  readonly effects: EffectsLevel;
 }
 
 export const DELAY_RANGE = { min: 50, max: 300 } as const;
@@ -30,7 +33,13 @@ export const DEFAULT_SETTINGS: Settings = {
   muted: false,
   sfxVolume: 70,
   musicVolume: 50,
+  effects: 'full',
 };
+
+/** The defaults here: Effects start Reduced when the system asks for reduced motion. */
+export function defaultSettings(reducedMotion: boolean): Settings {
+  return reducedMotion ? { ...DEFAULT_SETTINGS, effects: 'reduced' } : DEFAULT_SETTINGS;
+}
 
 /** Names of the bindable actions, in the order Settings lists them. Plain text. */
 export const ACTION_NAMES: Readonly<Record<Action, string>> = {
@@ -77,21 +86,23 @@ function parseKeys(raw: unknown): KeyMap {
 }
 
 /**
- * Settings from stored text. Each value is checked against its range or the bindable
- * keys; anything missing or invalid takes its default. Never throws: unreadable,
- * oversized or hostile text is all defaults.
+ * Settings from stored text. Each value is checked against its range, the bindable keys
+ * or its options; anything missing or invalid takes its default (see defaultSettings).
+ * Never throws: unreadable, oversized or hostile text is all defaults.
  */
-export function parseSettings(text: string | null): Settings {
-  if (typeof text !== 'string' || text.length > MAX_TEXT) return DEFAULT_SETTINGS;
+export function parseSettings(text: string | null, reducedMotion = false): Settings {
+  const defaults = defaultSettings(reducedMotion);
+  if (typeof text !== 'string' || text.length > MAX_TEXT) return defaults;
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    return DEFAULT_SETTINGS;
+    return defaults;
   }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return DEFAULT_SETTINGS;
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return defaults;
   const ghost = own(raw, 'ghost');
   const muted = own(raw, 'muted');
+  const effects = own(raw, 'effects');
   return {
     ghost: typeof ghost === 'boolean' ? ghost : DEFAULT_SETTINGS.ghost,
     delayMs: inRange(own(raw, 'delayMs'), DELAY_RANGE) ?? DEFAULT_SETTINGS.delayMs,
@@ -100,15 +111,20 @@ export function parseSettings(text: string | null): Settings {
     muted: typeof muted === 'boolean' ? muted : DEFAULT_SETTINGS.muted,
     sfxVolume: inRange(own(raw, 'sfxVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.sfxVolume,
     musicVolume: inRange(own(raw, 'musicVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.musicVolume,
+    effects: isEffectsLevel(effects) ? effects : defaults.effects,
   };
 }
 
+export function isEffectsLevel(value: unknown): value is EffectsLevel {
+  return EFFECTS_LEVELS.includes(value as EffectsLevel);
+}
+
 /** The stored settings, or the defaults. Storage that is missing or throws reads as defaults. */
-export function loadSettings(storage: () => SaveStorage | null): Settings {
+export function loadSettings(storage: () => SaveStorage | null, reducedMotion = false): Settings {
   try {
-    return parseSettings(storage()?.getItem(SETTINGS_KEY) ?? null);
+    return parseSettings(storage()?.getItem(SETTINGS_KEY) ?? null, reducedMotion);
   } catch {
-    return DEFAULT_SETTINGS;
+    return defaultSettings(reducedMotion);
   }
 }
 

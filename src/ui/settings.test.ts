@@ -8,6 +8,7 @@ import {
   DEFAULT_SETTINGS,
   SETTINGS_KEY,
   bindKey,
+  defaultSettings,
   loadSettings,
   parseSettings,
   repeatTiming,
@@ -45,7 +46,53 @@ const custom: Settings = {
   muted: true,
   sfxVolume: 0,
   musicVolume: 100,
+  effects: 'off',
 };
+
+describe('effects setting', () => {
+  it('defaults to Full, or Reduced when the system asks for reduced motion', () => {
+    expect(DEFAULT_SETTINGS.effects).toBe('full');
+    expect(defaultSettings(false)).toEqual(DEFAULT_SETTINGS);
+    expect(defaultSettings(true)).toEqual({ ...DEFAULT_SETTINGS, effects: 'reduced' });
+    expect(parseSettings(null, true).effects).toBe('reduced');
+    expect(parseSettings('{}', true).effects).toBe('reduced');
+    expect(parseSettings('not json', true).effects).toBe('reduced');
+    expect(loadSettings(() => memory(), true).effects).toBe('reduced');
+    expect(loadSettings(() => throwing, true).effects).toBe('reduced');
+    expect(loadSettings(() => memory()).effects).toBe('full');
+  });
+
+  it('a stored choice wins over the system default, both ways', () => {
+    for (const effects of ['full', 'reduced', 'off'] as const) {
+      const text = JSON.stringify({ effects });
+      expect(parseSettings(text, true).effects).toBe(effects);
+      expect(parseSettings(text, false).effects).toBe(effects);
+    }
+  });
+
+  it('refuses anything but the three options, and keeps the other settings', () => {
+    for (const v of [
+      'FULL',
+      ' full',
+      'full\u200b',
+      '\u202efull',
+      'fuII', // capital i, a look-alike of l
+      '__proto__',
+      'auto',
+      '',
+      'x'.repeat(500),
+      1,
+      true,
+      null,
+      ['full'],
+      { full: true },
+    ]) {
+      const s = parseSettings(JSON.stringify({ ...custom, effects: v }), true);
+      expect(s).toEqual({ ...custom, effects: 'reduced' });
+    }
+    expect(parseSettings('{"__proto__":{"effects":"off"}}').effects).toBe('full');
+  });
+});
 
 describe('parseSettings', () => {
   it('reads back what was written', () => {
@@ -97,9 +144,10 @@ describe('parseSettings', () => {
         muted: true,
         sfxVolume: 0,
         musicVolume: 100,
+        effects: 'shake',
       }),
     );
-    expect(s).toEqual({ ...custom, ghost: true, delayMs: 100, intervalMs: 33 });
+    expect(s).toEqual({ ...custom, ghost: true, delayMs: 100, intervalMs: 33, effects: 'full' });
   });
 
   it('keeps the volume range edges and refuses anything else', () => {
