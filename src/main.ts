@@ -14,6 +14,7 @@ import { Session } from './core/session.ts';
 import { KINDS, cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
+import { Effects } from './ui/effects.ts';
 import { fitBoard } from './ui/fit.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
@@ -26,13 +27,14 @@ import { PROFILE_KEY, loadProfile, updateProfile, writeProfile } from './ui/prof
 import { clearSave, loadSave, resumable, writeSave } from './ui/save.ts';
 import {
   ACTION_NAMES,
-  DEFAULT_SETTINGS,
   DELAY_RANGE,
   INTERVAL_RANGE,
   SETTINGS_KEY,
   VOLUME_RANGE,
   bindKey,
+  defaultSettings,
   inRange,
+  isEffectsLevel,
   loadSettings,
   repeatTiming,
   writeSettings,
@@ -86,6 +88,7 @@ const awardText = document.querySelector<HTMLElement>('#award')!;
 const openSettingsBtn = document.querySelector<HTMLButtonElement>('#open-settings')!;
 const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
 const ghostInput = document.querySelector<HTMLInputElement>('#set-ghost')!;
+const effectsInput = document.querySelector<HTMLSelectElement>('#set-effects')!;
 const delayInput = document.querySelector<HTMLInputElement>('#set-delay')!;
 const intervalInput = document.querySelector<HTMLInputElement>('#set-interval')!;
 const sfxInput = document.querySelector<HTMLInputElement>('#set-sfx')!;
@@ -118,8 +121,14 @@ let ladderTopRow = 1;
 const storage = () => window.localStorage;
 /** The game's lock count at its last save. */
 let savedLocks = 0;
+/** Whether the system asks for reduced motion: Effects then start Reduced. */
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 /** The player's options, applied at once and stored on every change. */
-let settings: Settings = loadSettings(storage);
+let settings: Settings = loadSettings(storage, reducedMotion());
+/** Effects over the board, fed by the game's events; presentation only. */
+const fx = new Effects(settings.effects);
+/** The previous frame's time, for the effects clock. */
+let lastFrame: number | null = null;
 /** Settings covers the board, over whatever else shows; a game in play stays paused under it. */
 let settingsOpen = false;
 /** The action whose key Settings is waiting for, or null. */
@@ -254,6 +263,7 @@ function begin(game: Game, countdown: boolean): void {
   saved = null;
   result = null;
   rungNow = game.rung === null ? null : rung(game.rung);
+  fx.clear();
   session = new Session(game, performance.now());
   if (countdown) {
     session.pause();
@@ -289,6 +299,7 @@ function resumeSaved(): void {
   if (saved.rung === null) menuMode = saved.state.mode.id;
   rungNow = saved.rung === null ? null : rung(saved.rung);
   result = null;
+  fx.clear();
   session = new Session(saved, performance.now());
   session.pause();
   savedLocks = session.game.locks;
@@ -333,6 +344,8 @@ function quit(): void {
 /** End the game in play once it's decided (rung passed or failed, game over); else save on lock. */
 function settle(): void {
   if (!session) return;
+  // First, while the game is still in play: a game that just ended plays its last events.
+  fx.handle(session.game.takeEvents());
   showAward();
   const game = session.game;
   const outcome = rungNow
@@ -612,7 +625,9 @@ function render(): void {
     setText('#status', phase === 'paused' ? 'Paused' : 'Get ready');
     return;
   }
+  fx.draw(ctx, 'background', cell);
   s.board.forEach((row, y) => row.forEach((c, x) => c && drawCell(ctx, cell, x, y, c)));
+  fx.draw(ctx, 'board', cell);
   const live = session !== null && !s.over;
   if (live) {
     const color = colorIndex(s.piece.kind);
@@ -626,6 +641,7 @@ function render(): void {
     }
     for (const [cx, cy] of cells) drawCell(ctx, cell, s.piece.x + cx, s.piece.y + cy, color);
   }
+  fx.draw(ctx, 'effects', cell);
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
@@ -683,7 +699,11 @@ function loop(now: number): void {
   session?.tick(now);
   const running = session?.phase === 'running' && !session.game.state.over;
   for (const move of keyRepeat.tick(now, running)) act(move);
+  // Settle hands this frame's events to the effects, so they start this frame.
   settle();
+  // A pause or countdown freezes every effect where it is.
+  fx.frame(now - (lastFrame ?? now), session !== null && session.phase !== 'running');
+  lastFrame = now;
   playSounds();
   render();
   requestAnimationFrame(loop);
@@ -1108,6 +1128,7 @@ document.querySelector('#set-keys')!.replaceChildren(
 
 function renderSettings(): void {
   ghostInput.checked = settings.ghost;
+  effectsInput.value = settings.effects;
   delayInput.value = String(settings.delayMs);
   intervalInput.value = String(settings.intervalMs);
   sfxInput.value = String(settings.sfxVolume);
@@ -1118,12 +1139,14 @@ function renderSettings(): void {
   muteBtn.setAttribute('aria-pressed', String(settings.muted));
   setText(
     '#set-interval-value',
-    settings.intervalMs === 0 ? '0 ms (instant)' : `${settings.intervalMs} ms`,
+    settings.intervalMs === 0 ? 'Instant' : `${settings.intervalMs} ms`,
   );
   for (const [action, btn] of keyButtons) {
     const waiting = binding === action;
     const label = waiting ? 'Press a key' : keyLabel(settings.keys[action]);
-    if (btn.textContent !== label) btn.textContent = label;
+    // Waiting shows as … so the button keeps its width; the note and label say the rest.
+    const shown = waiting ? '…' : label;
+    if (btn.textContent !== shown) btn.textContent = shown;
     btn.setAttribute('aria-pressed', String(waiting));
     btn.setAttribute('aria-label', `${ACTION_NAMES[action]}: ${label}`);
   }
@@ -1132,6 +1155,7 @@ function renderSettings(): void {
 /** Use `next` from now on: the repeat timing, the sound, the guide and the panel follow it. */
 function applySettings(next: Settings): void {
   settings = next;
+  fx.level = settings.effects;
   keyRepeat.setTiming(repeatTiming(settings));
   sound.setLevels(settings.muted, settings.sfxVolume, settings.musicVolume);
   renderSettings();
@@ -1205,6 +1229,11 @@ function settingsKey(e: KeyboardEvent): void {
 ghostInput.addEventListener('change', () =>
   changeSettings({ ...settings, ghost: ghostInput.checked }),
 );
+effectsInput.addEventListener('change', () => {
+  // The options are the page's own, but the value is checked like stored data anyway.
+  if (isEffectsLevel(effectsInput.value))
+    changeSettings({ ...settings, effects: effectsInput.value });
+});
 /** The timing and volumes the sliders show, applied while dragging and stored once the drag ends. */
 function sliderSettings(): Settings {
   return {
@@ -1228,7 +1257,7 @@ document.querySelector('#settings-reset')!.addEventListener('click', () => {
   binding = null;
   setText('#settings-note', 'Defaults restored.');
   // Mute is the HUD's and M's, not the panel's: Reset never makes a muted game loud.
-  changeSettings({ ...DEFAULT_SETTINGS, muted: settings.muted });
+  changeSettings({ ...defaultSettings(reducedMotion()), muted: settings.muted });
 });
 document.querySelector('#settings-back')!.addEventListener('click', closeSettings);
 document.querySelector('#pause-settings')!.addEventListener('click', openSettings);
@@ -1242,7 +1271,7 @@ window.addEventListener('storage', (e) => {
   // Held keys may now be other actions, so their keyups would be missed.
   keyRepeat.clear();
   binding = null;
-  applySettings(loadSettings(storage));
+  applySettings(loadSettings(storage, reducedMotion()));
 });
 applySettings(settings);
 

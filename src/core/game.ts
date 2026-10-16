@@ -1,3 +1,4 @@
+import { MAX_EVENTS, type Cell, type GameEvent } from './events.ts';
 import { PieceBag, cellsOf, colorIndex, type BagState, type Kind } from './pieces.ts';
 import type { Mode } from './modes/index.ts';
 import { scoreLock, type Award, type Chain, type Spin } from './scoring.ts';
@@ -56,6 +57,8 @@ export class Game {
   /** The falling piece's last successful move was a rotation (for spin detection). */
   private spun = false;
   private lastAward: Award | null = null;
+  /** Events since the last takeEvents(); never part of the state or a save. */
+  private events: GameEvent[] = [];
 
   /** A new game from `seed`, or one continued from a save (trusted: validate it first). */
   constructor(mode: Mode, from: number | SavedGame = Date.now()) {
@@ -104,6 +107,17 @@ export class Game {
   /** What the last lock scored and why, or null before the first lock. */
   get award(): Award | null {
     return this.lastAward;
+  }
+
+  /** The events reported since the last call, oldest first; the game forgets them. */
+  takeEvents(): GameEvent[] {
+    const taken = this.events;
+    this.events = [];
+    return taken;
+  }
+
+  private emit(event: GameEvent): void {
+    if (this.events.push(event) > MAX_EVENTS) this.events.shift();
   }
 
   /** A copy of the state to continue this game later. Meaningless once the game is over. */
@@ -155,8 +169,16 @@ export class Game {
   hardDrop(): void {
     if (this.state.over) return;
     const landing = this.ghost();
-    this.state.score += 2 * (landing.y - this.state.piece.y);
-    if (landing.y !== this.state.piece.y) this.spun = false;
+    const distance = landing.y - this.state.piece.y;
+    this.state.score += 2 * distance;
+    if (distance !== 0) this.spun = false;
+    this.emit({
+      type: 'hardDrop',
+      kind: landing.kind,
+      fromY: this.state.piece.y,
+      distance,
+      cells: cellsAt(landing),
+    });
     this.state.piece = landing;
     this.lock();
   }
@@ -204,11 +226,12 @@ export class Game {
     for (const [cx, cy] of cellsOf(s.piece.kind, s.piece.rot)) {
       const y = s.piece.y + cy;
       if (y < 0) {
-        s.over = true;
+        this.end();
         return;
       }
       s.board[y]![s.piece.x + cx] = color;
     }
+    this.emit({ type: 'lock', kind: s.piece.kind, cells: cellsAt(s.piece) });
     const cleared = this.clearLines();
     const fullClear = cleared > 0 && s.board.every((row) => row.every((c) => c === 0));
     const award = scoreLock(s.mode, s.level, cleared, spin, this.chain(), fullClear);
@@ -219,14 +242,29 @@ export class Game {
     if (cleared > 0) {
       s.lines += cleared;
       // Never below the level the game started on (a ladder rung can start above 1).
+      const from = s.level;
       s.level = Math.max(s.level, s.mode.levelForLines(s.lines));
+      if (s.level > from) this.emit({ type: 'levelUp', from, level: s.level });
     }
     s.piece = spawn(s.next);
     s.next = this.bag.next();
-    if (!this.fits(s.piece)) s.over = true;
+    if (!this.fits(s.piece)) this.end();
+  }
+
+  private end(): void {
+    this.state.over = true;
+    this.emit({ type: 'over' });
   }
 
   private clearLines(): number {
+    const rows: number[] = [];
+    const colors: number[][] = [];
+    this.state.board.forEach((row, y) => {
+      if (row.some((c) => c === 0)) return;
+      rows.push(y);
+      colors.push([...row]);
+    });
+    if (rows.length > 0) this.emit({ type: 'clear', rows, colors });
     const kept = this.state.board.filter((row) => row.some((c) => c === 0));
     const cleared = ROWS - kept.length;
     for (let i = 0; i < cleared; i++) kept.unshift(Array<number>(COLS).fill(0));
@@ -257,6 +295,11 @@ export function tSpin(board: number[][], p: Piece): Spin {
   if (filled.filter(Boolean).length < 3) return 'none';
   // Rotation r points at corners r and r + 1 (0 points up: top left and top right).
   return filled[p.rot]! && filled[(p.rot + 1) % 4]! ? 'full' : 'mini';
+}
+
+/** The board cells piece `p` covers. */
+function cellsAt(p: Piece): Cell[] {
+  return cellsOf(p.kind, p.rot).map(([cx, cy]) => [p.x + cx, p.y + cy] as const);
 }
 
 /** A new piece of `kind` at the spawn position. */

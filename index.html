@@ -109,32 +109,46 @@
             aria-labelledby="settings-title"
             hidden
           >
-            <p id="settings-title" class="pause-title">Settings</p>
-            <label class="setting check">
-              <input id="set-ghost" type="checkbox" />
-              Ghost piece
-            </label>
-            <label class="setting">
+            <div class="settings-top">
+              <button id="settings-back" type="button">Back</button>
+              <p id="settings-title" class="pause-title">Settings</p>
+              <button id="settings-reset" type="button" aria-label="Reset to defaults">
+                Reset
+              </button>
+            </div>
+            <div class="setting-pair">
+              <label class="setting check">
+                <input id="set-ghost" type="checkbox" />
+                Ghost piece
+              </label>
+              <label class="setting check">
+                Effects
+                <select id="set-effects">
+                  <option value="full">Full</option>
+                  <option value="reduced">Reduced</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            </div>
+            <label class="setting slider">
               <span>Auto-repeat delay <output id="set-delay-value"></output></span>
               <input id="set-delay" type="range" min="50" max="300" step="1" />
             </label>
-            <label class="setting">
+            <label class="setting slider">
               <span>Repeat interval <output id="set-interval-value"></output></span>
               <input id="set-interval" type="range" min="0" max="100" step="1" />
             </label>
-            <label class="setting">
+            <label class="setting slider">
               <span>Effects volume <output id="set-sfx-value"></output></span>
               <input id="set-sfx" type="range" min="0" max="100" step="1" />
             </label>
-            <label class="setting">
+            <label class="setting slider">
               <span>Music volume <output id="set-music-value"></output></span>
               <input id="set-music" type="range" min="0" max="100" step="1" />
             </label>
             <p class="settings-head">Keys</p>
             <div id="set-keys" class="set-keys"></div>
             <p id="settings-note" class="settings-note" aria-live="polite"></p>
-            <button id="settings-reset" type="button">Reset to defaults</button>
-            <button id="settings-back" type="button">Back</button>
           </div>
           <div id="ladder" class="pause-menu ladder" role="group" aria-label="Ladder" hidden>
             <div class="ladder-head">
