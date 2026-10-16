@@ -492,6 +492,24 @@ input[type='radio'] {
 .pause-menu > button {
   min-width: 12em;
 }
+/* A mode not built yet: its button greyed out, "Coming soon" beside it. */
+.menu-soon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.menu-soon button {
+  flex: 1;
+}
+.pause-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.soon {
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
 /* The result screen leaves the final board in sight behind it. It fades in once the
    game-over grey has swept the stack (main.ts holds it till then, and marks it .enter
    on that first showing only); Full scales it in too. */

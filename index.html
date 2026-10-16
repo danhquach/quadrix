@@ -92,7 +92,12 @@
             <p class="pause-title">Play</p>
             <button id="play-ladder" class="primary" type="button">Ladder</button>
             <button type="button" data-mode="classic">Classic</button>
-            <button type="button" data-mode="override">Override</button>
+            <div class="menu-soon">
+              <button type="button" data-mode="override" disabled aria-describedby="override-soon">
+                Override
+              </button>
+              <span id="override-soon" class="soon">Coming soon</span>
+            </div>
             <button id="open-cloud" type="button" hidden>Cloud save</button>
           </div>
           <div
