@@ -254,6 +254,25 @@ describe('feedback source: each event its effect, once', () => {
     banner.draw(ctx, 10);
     expect(ctx.texts.map((t) => t.text)).toEqual(['Level 5']);
   });
+
+  it('new pieces joining show a "New pieces!" banner under the level one', () => {
+    const fx = new Effects();
+    const started: Effect[] = [];
+    fx.use(feedback(LOOK, () => null));
+    const add = fx.add.bind(fx);
+    fx.add = (e) => (started.push(e), add(e));
+    fx.handle([
+      { type: 'levelUp', from: 5, level: 6 },
+      { type: 'newPieces', kinds: ['P', 'Pm'] },
+    ]);
+    const banners = started.filter((e) => e instanceof FloatText);
+    expect(banners).toHaveLength(2);
+    fx.frame(LEVEL_MS / 2, false);
+    const ctx = stubCtx();
+    for (const b of banners) b.draw(ctx, 10);
+    expect(ctx.texts.map((t) => t.text)).toEqual(['Level 6', 'New pieces!']);
+    expect(ctx.texts[1]!.y).toBeGreaterThan(ctx.texts[0]!.y);
+  });
 });
 
 describe('popups never cover the falling piece for more than COVER_MS', () => {

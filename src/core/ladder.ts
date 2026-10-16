@@ -1,6 +1,6 @@
 import { COLS, Game, ROWS, spawn, type GameState, type SavedGame } from './game.ts';
 import { classic } from './modes/classic.ts';
-import { KINDS, PieceBag, mulberry32 } from './pieces.ts';
+import { PieceBag, TETROMINOES, mulberry32 } from './pieces.ts';
 
 /** Fixed seed of the one ladder every player climbs. Changing it changes every rung. */
 export const LADDER_SEED = 0x51a3d0c6;
@@ -54,7 +54,7 @@ export function rung(index: number): Rung {
   for (let y = ROWS - garbage; y < ROWS; y++) {
     const hole = Math.floor(random() * COLS);
     for (let x = 0; x < COLS; x++) {
-      if (x !== hole) board[y]![x] = 1 + Math.floor(random() * KINDS.length);
+      if (x !== hole) board[y]![x] = 1 + Math.floor(random() * TETROMINOES.length);
     }
   }
 

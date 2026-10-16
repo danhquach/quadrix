@@ -622,8 +622,8 @@ function renderNext(kind: Kind | null): void {
   const minY = Math.min(...ys);
   const w = Math.max(...xs) - minX + 1;
   const h = Math.max(...ys) - minY + 1;
-  // Room for a 4×2 piece plus a margin all round.
-  const size = Math.floor(Math.min(width / 5, height / 3));
+  // Room for a 4×2 piece plus a margin all round; a bigger pentomino draws smaller to fit.
+  const size = Math.floor(Math.min(width / (Math.max(w, 4) + 1), height / (Math.max(h, 2) + 1)));
   const ox = Math.floor((width - w * size) / 2) - minX * size;
   const oy = Math.floor((height - h * size) / 2) - minY * size;
   for (const [x, y] of cells) drawCell(nextCtx, size, x, y, colorIndex(kind), ox, oy);
