@@ -303,6 +303,36 @@ describe('Motion: game over', () => {
     expect(m.greyed(0)).toBe(true);
   });
 
+  it('reports the sweep as running until the top row greys, frame by frame', () => {
+    const g = newGame();
+    const m = watch(g);
+    expect(m.greying()).toBe(false);
+    m.observe(g, [{ type: 'over' }]);
+    let ms = 0;
+    while (m.greying()) {
+      expect(m.greyed(0)).toBe(false);
+      m.frame(10, false);
+      ms += 10;
+    }
+    expect(m.greyed(0)).toBe(true);
+    expect(ms).toBe((ROWS - 1) * GREY_ROW_MS);
+    // A pause holds it.
+    const h = newGame();
+    const n = watch(h);
+    n.observe(h, [{ type: 'over' }]);
+    n.frame(10_000, true);
+    expect(n.greying()).toBe(true);
+  });
+
+  it('Reduced and Off have no sweep to wait for', () => {
+    for (const level of ['reduced', 'off'] as const) {
+      const g = newGame();
+      const m = watch(g, level);
+      m.observe(g, [{ type: 'over' }]);
+      expect(m.greying()).toBe(false);
+    }
+  });
+
   it('Reduced and Off grey it all at once', () => {
     for (const level of ['reduced', 'off'] as const) {
       const g = newGame();

@@ -61,7 +61,7 @@ describe('game events', () => {
       const kind = g.state.piece.kind;
       g.hardDrop();
       const events = g.takeEvents();
-      expect(events.map((e) => e.type)).toEqual(['hardDrop', 'lock', 'clear']);
+      expect(events.map((e) => e.type)).toEqual(['hardDrop', 'lock', 'clear', 'award']);
       const clear = events[2]!;
       if (clear.type !== 'clear') throw new Error('not a clear');
       expect(clear.rows).toEqual(rows);
@@ -86,6 +86,41 @@ describe('game events', () => {
     setUpClear(g);
     g.hardDrop();
     expect(g.takeEvents().some((e) => e.type === 'levelUp')).toBe(false);
+  });
+
+  it('a scoring lock reports its award once, after the clear and before the level up', () => {
+    const g = new Game(MODES.classic!, 1);
+    g.state.lines = 9;
+    setUpClear(g);
+    g.hardDrop();
+    const events = g.takeEvents();
+    expect(events.map((e) => e.type)).toEqual(['hardDrop', 'lock', 'clear', 'award', 'levelUp']);
+    const award = events[3]!;
+    if (award.type !== 'award') throw new Error('not an award');
+    expect(award.points).toBe(g.award!.points);
+    expect(award.labels).toEqual(g.award!.labels);
+    // Scored on the level before the clear raised it.
+    expect(award.level).toBe(1);
+  });
+
+  it('a lock that scores nothing reports no award', () => {
+    const g = new Game(MODES.classic!, 1);
+    g.hardDrop();
+    expect(g.takeEvents().map((e) => e.type)).toEqual(['hardDrop', 'lock']);
+  });
+
+  it('an award carries its own copy of the labels', () => {
+    const g = new Game(MODES.classic!, 1);
+    setUpClear(g);
+    g.hardDrop();
+    g.takeEvents();
+    setUpClear(g);
+    g.hardDrop();
+    const award = g.takeEvents().find((e) => e.type === 'award');
+    if (award?.type !== 'award') throw new Error('no award');
+    // setUpClear leaves the board empty: a full clear too.
+    expect(award.labels).toEqual(['Combo 1', 'Full clear']);
+    expect(award.labels).not.toBe(g.award!.labels);
   });
 
   it('game over is reported once, after the lock that caused it, and nothing after', () => {

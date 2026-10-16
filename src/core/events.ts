@@ -6,7 +6,7 @@ export type Cell = readonly [number, number];
 /**
  * Something that happened in a game, with what an effect needs to show it. The game
  * only reports these; it knows nothing about who listens. One action reports its
- * events in this order: hardDrop, lock, clear, levelUp, over.
+ * events in this order: hardDrop, lock, clear, award, levelUp, over.
  */
 export type GameEvent =
   /**
@@ -27,6 +27,13 @@ export type GameEvent =
       readonly type: 'clear';
       readonly rows: readonly number[];
       readonly colors: readonly (readonly number[])[];
+    }
+  /** What the lock scored on `level` and why ("Quad", "Combo 2"); only when it scored anything. */
+  | {
+      readonly type: 'award';
+      readonly points: number;
+      readonly labels: readonly string[];
+      readonly level: number;
     }
   | { readonly type: 'levelUp'; readonly from: number; readonly level: number }
   | { readonly type: 'over' };

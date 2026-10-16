@@ -15,6 +15,7 @@ import { KINDS, cellsOf, colorIndex, type Kind } from './core/pieces.ts';
 import { highestRung, recordGame, recordRung, rename } from './core/profile.ts';
 import { CLOUD_KEY, CloudSync, cloudConfig, formatCode, type CloudStatus } from './ui/cloud.ts';
 import { Effects } from './ui/effects.ts';
+import { Danger, HudCount, drawGlow, feedback, inDanger, type Span } from './ui/feedback.ts';
 import { fitBoard } from './ui/fit.ts';
 import { Motion } from './ui/motion.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
@@ -55,6 +56,8 @@ const GRID = cssColor('--grid') || '#222';
 const GREY = blockColors(cssColor('--stack-over') || '#5d6275');
 /** Opacity of the ghost piece: the falling piece's landing spot. */
 const GHOST_ALPHA = 0.3;
+/** The edge glow while the stack is near the top. */
+const DANGER = cssColor('--danger') || '#ff4d5e';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#board')!;
 const ctx = canvas.getContext('2d')!;
@@ -110,6 +113,8 @@ let session: Session | null = null;
 let rungNow: Rung | null = null;
 /** How the last game ended, shown on the result screen. */
 let result: { game: Game; outcome: RungOutcome; stars: number } | null = null;
+/** Whether the result screen has yet to make its entrance: once, not again after Settings. */
+let resultFresh = false;
 /** When the result screen appeared (performance.now()). */
 let resultAt = 0;
 /** Taps and keys this soon after a game ends are the game's, not the result's buttons. */
@@ -132,6 +137,31 @@ let settings: Settings = loadSettings(storage, reducedMotion());
 const fx = new Effects(settings.effects);
 /** How the board moves between game states: slides, drops, squash and the game-over grey. */
 const motion = new Motion(settings.effects);
+/** The HUD score's count-up and the Lines and Level pulses. */
+const hud = new HudCount(settings.effects);
+/** The edge glow while any locked cell is near the top. */
+const danger = new Danger(settings.effects);
+/** The falling piece's columns, which score popups keep clear of; null with none in play. */
+function pieceSpan(): Span | null {
+  const game = session?.game;
+  if (!game || game.state.over) return null;
+  const p = game.state.piece;
+  const xs = cellsOf(p.kind, p.rot).map(([x]) => p.x + x);
+  return [Math.min(...xs), Math.max(...xs) + 1];
+}
+// Lock flashes, score popups and the level-up light and banner.
+fx.use(
+  feedback(
+    {
+      font: cssColor('--font-display') || 'sans-serif',
+      text: cssColor('--accent') || '#ffd166',
+      outline: WELL_BG,
+      flash: cssColor('--text') || '#fff',
+      light: cssColor('--accent') || '#ffd166',
+    },
+    pieceSpan,
+  ),
+);
 /** The previous frame's time, for the effects clock. */
 let lastFrame: number | null = null;
 /** Settings covers the board, over whatever else shows; a game in play stays paused under it. */
@@ -379,6 +409,7 @@ function settle(): void {
   clearSave(storage);
   stopInput();
   result = { game, outcome, stars };
+  resultFresh = true;
   screen = 'result';
   resultAt = performance.now();
   showResult();
@@ -558,13 +589,17 @@ function renderOverlay(): void {
   const phase = session?.phase ?? 'running';
   const offer = !session && saved !== null;
   const idle = !session && !offer;
-  const shown = !session || phase !== 'running' || settingsOpen;
+  // The result waits for the game-over grey to sweep the stack, then fades in.
+  const settling = idle && screen === 'result' && motion.greying();
+  const shown = (!session && !settling) || phase !== 'running' || settingsOpen;
   if (overlay.hidden === shown) overlay.hidden = !shown;
   showMenu(settingsPanel, settingsOpen, ghostInput);
   // The other panels wait under Settings until it closes.
   const under = !settingsOpen;
   // The result leaves the final board in sight.
   overlay.classList.toggle('see-through', idle && screen === 'result' && !settingsOpen);
+  if (settingsOpen) resultFresh = false;
+  overlay.classList.toggle('enter', resultFresh && idle && screen === 'result' && !settling);
   showMenu(resumePrompt, under && offer, resumeSavedBtn);
   showMenu(pauseMenu, under && phase === 'paused', resumeBtn);
   showMenu(mainMenu, under && idle && screen === 'menu', ladderBtn);
@@ -575,7 +610,7 @@ function renderOverlay(): void {
   );
   showMenu(
     resultPanel,
-    under && idle && screen === 'result',
+    under && idle && screen === 'result' && !settling,
     resultNext.hidden ? resultRetry : resultNext,
   );
   showMenu(
@@ -615,6 +650,7 @@ function render(): void {
   const best = Math.max(profile.best[modeId]?.score ?? 0, game?.state.score ?? 0);
   setText('#best', String(best));
   if (!game) {
+    danger.set(false);
     renderNext(null);
     setText('#score', '0');
     setText('#lines', '0');
@@ -625,9 +661,14 @@ function render(): void {
   }
   const s = game.state;
   const phase = session?.phase ?? 'running';
-  setText('#score', String(s.score));
+  const live = session !== null && !s.over;
+  danger.set(live && inDanger(s.board));
+  const changed = hud.observe(game);
+  setText('#score', String(hud.score));
   setText('#lines', String(s.lines));
   setText('#level', String(s.level));
+  if (changed.lines) pulse('#lines');
+  if (changed.level) pulse('#level');
   setText('#pause', phase === 'paused' ? 'Resume' : 'Pause');
   // No planning while paused: the board and next piece stay hidden until play resumes.
   if (phase !== 'running') {
@@ -638,9 +679,9 @@ function render(): void {
   fx.draw(ctx, 'background', cell);
   drawStack(s.board);
   fx.draw(ctx, 'board', cell);
-  const live = session !== null && !s.over;
   if (live) drawPiece(game);
   fx.draw(ctx, 'effects', cell);
+  drawGlow(ctx, cell, danger.alpha, DANGER);
   renderNext(live ? s.next : null);
   if (!session) setText('#status', $('#result-title').textContent ?? '');
   else setText('#status', r ? `Rung ${r.index}` : s.mode.name);
@@ -705,11 +746,22 @@ function drawPiece(game: Game): void {
   ctx.globalAlpha = 1;
 }
 
+/** Replay a HUD number's pulse, even when it is already playing. */
+function pulse(id: string): void {
+  const el = $(id);
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
+}
+
 /** The game and lock count whose award last showed, so each lock shows once. */
 let awardGame: Game | null = null;
 let awardLocks = 0;
 
-/** Flash what the last lock scored ("Quad", "Combo 2") over the board, once per lock. */
+/**
+ * Tell screen readers what the last lock scored ("Quad", "Combo 2"), once per lock. The
+ * board shows it as a popup (src/ui/feedback.ts).
+ */
 function showAward(): void {
   const game = session?.game;
   if (!game) return;
@@ -719,10 +771,6 @@ function showAward(): void {
   const labels = game.award?.labels ?? [];
   if (!fresh || labels.length === 0) return;
   awardText.textContent = labels.join('\n');
-  // Restart the fade, even when the same label shows again.
-  awardText.classList.remove('show');
-  void awardText.offsetWidth;
-  awardText.classList.add('show');
 }
 
 const sound = new SoundOut();
@@ -763,6 +811,8 @@ function loop(now: number): void {
   const frozen = session !== null && session.phase !== 'running';
   fx.frame(now - (lastFrame ?? now), frozen);
   motion.frame(now - (lastFrame ?? now), frozen);
+  hud.frame(now - (lastFrame ?? now), frozen);
+  danger.frame(now - (lastFrame ?? now), frozen);
   lastFrame = now;
   playSounds();
   render();
@@ -1217,6 +1267,10 @@ function applySettings(next: Settings): void {
   settings = next;
   fx.level = settings.effects;
   motion.level = settings.effects;
+  hud.level = settings.effects;
+  danger.level = settings.effects;
+  // page.css picks the HUD pulse and the result's entrance by it.
+  document.documentElement.dataset.effects = settings.effects;
   keyRepeat.setTiming(repeatTiming(settings));
   sound.setLevels(settings.muted, settings.sfxVolume, settings.musicVolume);
   renderSettings();

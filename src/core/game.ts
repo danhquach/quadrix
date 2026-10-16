@@ -239,6 +239,10 @@ export class Game {
     this.streak = award.streak;
     this.b2b = award.b2b;
     s.score += award.points;
+    if (award.points > 0 || award.labels.length > 0) {
+      const { points, labels } = award;
+      this.emit({ type: 'award', points, labels: [...labels], level: s.level });
+    }
     if (cleared > 0) {
       s.lines += cleared;
       // Never below the level the game started on (a ladder rung can start above 1).
