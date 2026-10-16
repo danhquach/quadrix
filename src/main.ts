@@ -22,7 +22,14 @@ import { Ambient, Shake, drawBlockGlow, rng, vfx } from './ui/vfx.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
 import { isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
-import { PAGE, ladderPage, ladderTop, starText } from './ui/ladder.ts';
+import {
+  PAGE,
+  ladderPage,
+  ladderTop,
+  objectiveView,
+  starText,
+  type ObjectiveView,
+} from './ui/ladder.ts';
 import { onLeaveScreen } from './ui/lifecycle.ts';
 import { PlayedGame } from './ui/played.ts';
 import { KeyRepeat, heldMove } from './ui/repeat.ts';
@@ -99,7 +106,7 @@ const cloudBackBtn = document.querySelector<HTMLButtonElement>('#cloud-back')!;
 const linkInput = document.querySelector<HTMLInputElement>('#link-input')!;
 const linkSubmit = document.querySelector<HTMLButtonElement>('#link-submit')!;
 const guidePanel = document.querySelector<HTMLElement>('#guide')!;
-const guideToggle = document.querySelector<HTMLButtonElement>('#guide-toggle')!;
+const guideInput = document.querySelector<HTMLInputElement>('#set-guide')!;
 const awardText = document.querySelector<HTMLElement>('#award')!;
 const openSettingsBtn = document.querySelector<HTMLButtonElement>('#open-settings')!;
 const settingsPanel = document.querySelector<HTMLElement>('#settings')!;
@@ -287,7 +294,13 @@ function fit(): void {
   // below, so .well never clips it.
   const frame = parseFloat(getComputedStyle(canvas).outlineWidth) || 0;
   const margin = 2 * frame + 2 / dpr;
-  const f = fitBoard(box.width - margin, box.height - margin, COLS, ROWS, dpr);
+  // Phones in portrait keep side rails clear of the board (page.css).
+  const app = getComputedStyle(well.parentElement!);
+  // Rail widths are plain px in page.css; parseFloat reads nothing else.
+  const railLeft = parseFloat(app.getPropertyValue('--rail-left')) || 0;
+  const railRight = parseFloat(app.getPropertyValue('--rail-right')) || 0;
+  const room = box.width - railLeft - railRight;
+  const f = fitBoard(room - margin, box.height - margin, COLS, ROWS, dpr);
   cell = f.deviceCell;
   canvas.width = f.pxWidth;
   canvas.height = f.pxHeight;
@@ -295,7 +308,7 @@ function fit(): void {
   canvas.style.height = `${f.cssHeight}px`;
   // Centre on whole device pixels so the browser never resamples the board.
   const snap = (v: number) => Math.round(v * dpr) / dpr;
-  canvas.style.left = `${snap(box.left + (box.width - f.cssWidth) / 2) - box.left}px`;
+  canvas.style.left = `${snap(box.left + railLeft + (room - f.cssWidth) / 2) - box.left}px`;
   canvas.style.top = `${snap(box.top + (box.height - f.cssHeight) / 2) - box.top}px`;
   // Inside the box's border, which the backing store doesn't cover.
   nextCanvas.width = Math.round(nextCanvas.clientWidth * dpr);
@@ -665,6 +678,21 @@ function renderOverlay(): void {
   );
 }
 
+/** The rung tracker: lines and pieces so far, each star target struck once it is lost. */
+function renderObjective(v: ObjectiveView): void {
+  setText('#obj-lines', v.lines);
+  setText('#obj-pieces', v.pieces);
+  for (const [id, text, lost] of [
+    ['#obj-three', v.three, v.threeLost],
+    ['#obj-two', v.two, v.twoLost],
+  ] as const) {
+    const el = $(id);
+    setText(`${id} .target-text`, text);
+    el.classList.toggle('lost', lost);
+    setHidden(`${id} .sr-only`, !lost);
+  }
+}
+
 /** Set `hidden` only when it changes. */
 function setHidden(id: string, hidden: boolean): void {
   const el = $(id);
@@ -681,10 +709,12 @@ function render(): void {
   const r = game ? rungNow : null;
   setHidden('#best-row', r !== null);
   setHidden('#rung-row', r === null);
-  setHidden('#goal-row', r === null);
+  // A rung's objective replaces the plain Lines count, from the countdown to the result.
+  setHidden('#objective', r === null);
+  setHidden('#lines-row', r !== null);
   if (r) {
     setText('#rung', String(r.index));
-    setText('#goal', `${Math.min(game!.state.lines, r.goalLines)} / ${r.goalLines}`);
+    renderObjective(objectiveView(r, game!.state.lines, game!.locks));
   }
   const modeId = game?.state.mode.id ?? menuMode;
   // The game in progress shows as Best as soon as it beats the record.
@@ -899,6 +929,8 @@ document.addEventListener('keydown', (e) => {
   // Typing a name or link code is not playing: its keys stay in the field.
   if (e.target === nameInput || e.target === linkInput) return;
   guide.keyboardSeen();
+  // A first key press shows the Settings guide switch, even while Settings has the keys.
+  renderGuide();
   // M mutes or unmutes at any time, unless Settings is waiting for a key to bind.
   if (!binding && isMuteKey(e.key, e.ctrlKey || e.metaKey || e.altKey)) {
     e.preventDefault();
@@ -921,7 +953,6 @@ document.addEventListener('keydown', (e) => {
     if (!e.repeat) toggleGuide();
     return;
   }
-  renderGuide();
   const modified = e.ctrlKey || e.metaKey || e.altKey;
   // macOS drops the keyup of a key released while Cmd is down, so a modifier forgets held keys.
   if (e.key === 'Meta' || e.key === 'Control' || e.key === 'Alt') keyRepeat.clear();
@@ -1117,8 +1148,9 @@ renderGuideKeys();
 
 function renderGuide(): void {
   if (guidePanel.hidden === guide.visible) guidePanel.hidden = guidePanel.inert = !guide.visible;
-  if (guideToggle.hidden === guide.linkVisible) guideToggle.hidden = !guide.linkVisible;
-  guideToggle.setAttribute('aria-expanded', String(guide.visible));
+  // The Settings switch shows to keyboard players only, like the guide.
+  setHidden('#set-guide-row', !guide.linkVisible);
+  guideInput.checked = guide.visible;
 }
 
 function toggleGuide(): void {
@@ -1126,11 +1158,11 @@ function toggleGuide(): void {
   renderGuide();
 }
 
-// Like the Pause button, the guide's buttons never take focus, so Space can't press them.
-for (const btn of [guideToggle, document.querySelector<HTMLButtonElement>('#guide-close')!]) {
-  btn.addEventListener('pointerdown', (e) => e.preventDefault());
-}
-guideToggle.addEventListener('click', toggleGuide);
+// Like the Pause button, the guide's close button never takes focus, so Space can't press it.
+document.querySelector('#guide-close')!.addEventListener('pointerdown', (e) => e.preventDefault());
+guideInput.addEventListener('change', () => {
+  if (guideInput.checked !== guide.visible) toggleGuide();
+});
 document.querySelector('#guide-close')!.addEventListener('click', () => {
   guide.close();
   writeGuideClosed(storage);

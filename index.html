@@ -16,6 +16,7 @@
             <input
               id="name"
               type="text"
+              placeholder="Name"
               maxlength="64"
               autocomplete="off"
               autocapitalize="off"
@@ -29,32 +30,49 @@
             Pause
           </button>
           <button id="open-settings" type="button" tabindex="-1">Settings</button>
-          <button id="mute" type="button" tabindex="-1" aria-pressed="false">Mute</button>
           <button
-            id="guide-toggle"
+            id="mute"
+            class="icon"
             type="button"
             tabindex="-1"
-            aria-controls="guide"
-            aria-expanded="false"
-            hidden
+            aria-label="Mute"
+            aria-pressed="false"
+            title="Mute (M)"
           >
-            Controls
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path class="speaker" d="M4 9h4l5-4v14l-5-4H4z" />
+              <path class="sound-on" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" />
+              <path class="sound-off" d="M16 9l6 6M22 9l-6 6" />
+            </svg>
           </button>
         </div>
         <div class="hud card">
           <p id="rung-row" class="stat" hidden>
             <span class="label">Rung</span> <span id="rung" class="value">1</span>
           </p>
-          <p id="goal-row" class="stat" hidden>
-            <span class="label">Goal</span> <span id="goal" class="value">0 / 0</span>
-          </p>
+          <div id="objective" class="objective" hidden>
+            <p class="stat">
+              <span class="label">Lines</span> <span id="obj-lines" class="value">0 / 0</span>
+            </p>
+            <p class="stat">
+              <span class="label">Pieces</span> <span id="obj-pieces" class="value">0</span>
+            </p>
+            <p class="targets">
+              <span id="obj-three" class="target"
+                ><span class="target-text"></span><span class="sr-only" hidden> missed</span></span
+              >
+              <span id="obj-two" class="target"
+                ><span class="target-text"></span><span class="sr-only" hidden> missed</span></span
+              >
+            </p>
+          </div>
           <p class="stat score">
             <span class="label">Score</span> <span id="score" class="value">0</span>
           </p>
-          <p class="stat">
+          <p id="lines-row" class="stat">
             <span class="label">Lines</span> <span id="lines" class="value">0</span>
           </p>
-          <p class="stat">
+          <p id="level-row" class="stat">
             <span class="label">Level</span> <span id="level" class="value">1</span>
           </p>
           <div class="next">
@@ -148,24 +166,16 @@
                 role="tabpanel"
                 aria-labelledby="tab-general"
               >
-                <div class="setting-pair">
+                <div class="setting-group" role="group" aria-label="Ghost">
                   <label class="setting check">
                     <input id="set-ghost" type="checkbox" />
                     Ghost piece
                   </label>
-                  <label class="setting check">
-                    Effects
-                    <select id="set-effects">
-                      <option value="full">Full</option>
-                      <option value="reduced">Reduced</option>
-                      <option value="off">Off</option>
-                    </select>
+                  <label class="setting slider">
+                    <span>Ghost opacity <output id="set-ghost-opacity-value"></output></span>
+                    <input id="set-ghost-opacity" type="range" min="10" max="60" step="10" />
                   </label>
                 </div>
-                <label class="setting slider">
-                  <span>Ghost opacity <output id="set-ghost-opacity-value"></output></span>
-                  <input id="set-ghost-opacity" type="range" min="10" max="60" step="10" />
-                </label>
                 <label class="setting slider">
                   <span>Auto-repeat delay <output id="set-delay-value"></output></span>
                   <input id="set-delay" type="range" min="50" max="300" step="1" />
@@ -173,6 +183,14 @@
                 <label class="setting slider">
                   <span>Repeat interval <output id="set-interval-value"></output></span>
                   <input id="set-interval" type="range" min="0" max="100" step="1" />
+                </label>
+                <label class="setting slider">
+                  <span>Visual effects</span>
+                  <select id="set-effects">
+                    <option value="full">Full</option>
+                    <option value="reduced">Reduced</option>
+                    <option value="off">Off</option>
+                  </select>
                 </label>
                 <label class="setting slider">
                   <span>Effects volume <output id="set-sfx-value"></output></span>
@@ -183,6 +201,10 @@
                   <input id="set-music" type="range" min="0" max="100" step="1" />
                 </label>
                 <p class="settings-head">Keys</p>
+                <label id="set-guide-row" class="setting check" hidden>
+                  <input id="set-guide" type="checkbox" aria-controls="guide" />
+                  Show controls guide
+                </label>
                 <div id="set-keys" class="set-keys"></div>
               </div>
               <div

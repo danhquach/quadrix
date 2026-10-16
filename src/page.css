@@ -213,6 +213,39 @@ input[type='radio'] {
   user-select: text;
   -webkit-user-select: text;
 }
+/* Mute is a speaker icon: sound waves when on, a cross when muted (aria-pressed). */
+.controls #mute {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  padding: 4px 8px;
+}
+#mute svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#mute .speaker {
+  fill: currentColor;
+}
+#mute[aria-pressed='true'] .sound-on,
+#mute[aria-pressed='false'] .sound-off {
+  display: none;
+}
+/* Read by screen readers, not shown. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 /* Wide enough for "Resume" too, so toggling never reflows the layout. */
 #pause {
   min-width: 5em;
@@ -222,6 +255,8 @@ input[type='radio'] {
   flex-basis: 100%;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -231,8 +266,32 @@ input[type='radio'] {
   align-items: baseline;
   gap: 6px;
 }
-.stat[hidden] {
+.stat[hidden],
+.objective[hidden],
+.setting[hidden],
+.best[hidden] {
   display: none;
+}
+/* A rung's objective: its own row under the HUD (portrait), its own block (landscape). */
+.objective {
+  order: 1;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.targets {
+  display: flex;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+/* A star target missed: dimmed and struck through. */
+.target.lost {
+  color: var(--muted);
+  opacity: 0.6;
+  text-decoration: line-through;
 }
 .label {
   font-size: 0.75rem;
@@ -338,10 +397,11 @@ input[type='radio'] {
 }
 /* Paused or counting down: an opaque cover over the whole well, so the board
    can't be studied while the clock is stopped. A rung's goal stacks above. */
+/* Above the phone rails (z-index 1) that sit over the well's edges. */
 .overlay {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -558,11 +618,11 @@ input[type='radio'] {
 .settings-top #settings-reset {
   justify-self: end;
 }
-.setting-pair {
+/* Ghost piece and its opacity, kept together. */
+.setting-group {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
 }
 .setting {
   display: flex;
@@ -827,11 +887,10 @@ input[type='radio'] {
   .controls {
     flex: 0 0 auto;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr auto;
     gap: 6px;
   }
-  .controls #pause,
-  .controls #guide-toggle {
+  .controls #pause {
     grid-column: span 2;
   }
   .player {
@@ -862,15 +921,26 @@ input[type='radio'] {
   .hud {
     flex-basis: auto;
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 6px;
   }
-  /* A line between rows; hidden rows (Rung, Goal outside the ladder) take none. */
+  /* A line between rows; hidden rows (Rung and the objective outside the ladder) take none. */
   .hud > :not([hidden]) ~ * {
     padding-top: 6px;
     border-top: 1px solid var(--card-line);
   }
   .stat {
+    justify-content: space-between;
+  }
+  .objective {
+    order: 0;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .targets {
     justify-content: space-between;
   }
   .score {
@@ -891,28 +961,145 @@ input[type='radio'] {
     height: 60px;
   }
 }
-/* Narrow portrait screens: a smaller score and preview keep the HUD on one row. */
-@media (orientation: portrait) and (max-width: 359px) {
-  .hud {
-    gap: 4px;
+/* Phones in portrait: the board takes the middle, with Rung, Score, Best and Level on a rail
+   to its left, Next on a rail to its right, and Lines (a rung's objective) above it. The rails sit
+   over the well's edges, so menus still cover the full width; main.ts keeps the board
+   between them (--rail-left, --rail-right). */
+@media (orientation: portrait) and (max-width: 599px) {
+  .app {
+    --rail-left: 56px;
+    --rail-right: 56px;
+    display: grid;
+    grid-template-columns: var(--rail-left) minmax(0, 1fr) var(--rail-right);
+    grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr) auto auto;
+    gap: 0;
   }
-  .hud .label {
+  /* Spacing by margins, not row gaps, so empty rows (no guide, no pad) take no room. */
+  .controls,
+  .objective,
+  #lines-row,
+  .well,
+  .guide,
+  .pad {
+    margin-top: 6px;
+  }
+  .objective {
+    gap: 4px 8px;
+  }
+  .targets {
+    gap: 6px;
+  }
+  /* The HUD box is gone here, so its items replay the entrance themselves. */
+  .hud.enter > * {
+    animation: ui-enter var(--ui-enter) var(--ui-ease) backwards;
+  }
+  .side,
+  .hud,
+  .player {
+    display: contents;
+  }
+  h1 {
+    grid-area: 1 / 1 / 2 / -1;
+    justify-self: start;
+    align-self: center;
+  }
+  .name {
+    grid-area: 1 / 1 / 2 / -1;
+    justify-self: end;
+    max-width: calc(100% - 8rem);
+    min-width: 0;
+  }
+  /* The name fits beside the title: the field keeps "Name" as its label, unseen. */
+  .name .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  #name {
+    width: 9em;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .controls {
+    grid-area: 2 / 1 / 3 / -1;
+  }
+  .objective,
+  #lines-row {
+    grid-area: 3 / 1 / 4 / -1;
+  }
+  .well {
+    grid-area: 4 / 1 / 9 / -1;
+  }
+  .guide {
+    grid-area: 9 / 1 / 10 / -1;
+  }
+  .pad {
+    grid-area: 10 / 1 / 11 / -1;
+  }
+  /* The rails: stacked label over value; touches pass through to the board's gestures. */
+  #rung-row,
+  .score,
+  .best,
+  #level-row,
+  .next,
+  #status {
+    z-index: 1;
+    pointer-events: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    margin-bottom: 6px;
+  }
+  #rung-row {
+    grid-area: 4 / 1;
+  }
+  .score {
+    grid-area: 5 / 1;
+  }
+  .best {
+    grid-area: 6 / 1;
+    display: flex;
+  }
+  #level-row {
+    grid-area: 7 / 1;
+  }
+  .next {
+    grid-area: 4 / 3;
+    justify-self: end;
+  }
+  #status {
+    grid-area: 5 / 3;
+    justify-self: end;
+    text-align: right;
+    font-size: 0.8rem;
+  }
+  /* Six digits still fit the rail. */
+  .score .value,
+  #best {
+    font-size: 0.95rem;
+  }
+  .side .label {
     letter-spacing: 0.02em;
   }
-  .stat,
-  .next {
-    gap: 3px;
-  }
-  .score .value {
-    font-size: 1.2rem;
-  }
   #next {
-    width: 48px;
-    height: 30px;
+    width: 52px;
+    height: 32px;
+  }
+}
+/* The smallest phones: a smaller title leaves the name field more room. */
+@media (orientation: portrait) and (max-width: 359px) {
+  h1 {
+    font-size: 1rem;
+  }
+  .name {
+    max-width: calc(100% - 6rem);
   }
 }
 /* Short landscape screens (small phones): tighten the side panel so it all fits. */
-@media (orientation: landscape) and (max-height: 420px) {
+@media (orientation: landscape) and (max-height: 500px) {
   h1 {
     font-size: 1rem;
   }
@@ -950,12 +1137,12 @@ input[type='radio'] {
   .best {
     gap: 4px;
   }
-  /* Pause and Controls share rows too: two rows of buttons, not three. */
+  /* Pause, Settings and Mute share one row. */
   .controls {
+    grid-template-columns: 1fr 1fr auto;
     gap: 4px;
   }
-  .controls #pause,
-  .controls #guide-toggle {
+  .controls #pause {
     grid-column: auto;
   }
   .hud {
@@ -963,6 +1150,12 @@ input[type='radio'] {
   }
   .hud > :not([hidden]) ~ * {
     padding-top: 2px;
+  }
+  .objective {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 2px 8px;
   }
   .score .value {
     font-size: 1.5rem;
@@ -1015,5 +1208,11 @@ input[type='radio'] {
   }
   .pad [data-action='rotate'] {
     grid-column: span 2;
+  }
+}
+/* Phones in portrait: a taller touch pad, sized for thumbs. */
+@media (any-pointer: coarse) and (orientation: portrait) and (max-width: 599px) {
+  .pad button {
+    min-height: 72px;
   }
 }

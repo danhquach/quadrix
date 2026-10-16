@@ -1,4 +1,4 @@
-import { MAX_RUNGS } from '../core/ladder.ts';
+import { MAX_RUNGS, type Rung } from '../core/ladder.ts';
 
 /** Rungs listed at once; Higher and Lower page by this many. */
 export const PAGE = 50;
@@ -50,4 +50,32 @@ export function ladderPage(stars: string, highest: number, top: number): LadderP
 export function starText(n: number): string {
   const k = Number.isInteger(n) ? Math.min(3, Math.max(0, n)) : 0;
   return '★'.repeat(k) + '☆'.repeat(3 - k);
+}
+
+export interface ObjectiveView {
+  /** Lines cleared toward the goal, e.g. "3 / 4" (capped at the goal). */
+  lines: string;
+  /** Pieces locked so far. */
+  pieces: string;
+  three: string;
+  two: string;
+  /** A star target is lost once more pieces than it allows are locked. */
+  threeLost: boolean;
+  twoLost: boolean;
+}
+
+/** The rung's objective and live tracker, as plain text, for `lines` cleared and `pieces` locked. */
+export function objectiveView(
+  r: Pick<Rung, 'goalLines' | 'stars'>,
+  lines: number,
+  pieces: number,
+): ObjectiveView {
+  return {
+    lines: `${Math.min(lines, r.goalLines)} / ${r.goalLines}`,
+    pieces: String(pieces),
+    three: `★★★ ≤ ${r.stars.three}`,
+    two: `★★ ≤ ${r.stars.two}`,
+    threeLost: pieces > r.stars.three,
+    twoLost: pieces > r.stars.two,
+  };
 }
