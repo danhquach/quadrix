@@ -21,13 +21,13 @@
   --danger: #ff4d5e;
   --glow: rgb(90 100 200 / 0.18);
   --dim: rgb(10 12 24 / 0.8);
-  --piece-i: #3cc8e6;
-  --piece-o: #f2cb4c;
-  --piece-t: #a86de0;
-  --piece-s: #5cc860;
-  --piece-z: #e85660;
-  --piece-j: #4f80ea;
-  --piece-l: #f08d3c;
+  --piece-i: #00e5ff;
+  --piece-o: #ffd600;
+  --piece-t: #b84dff;
+  --piece-s: #2ee86a;
+  --piece-z: #ff2d55;
+  --piece-j: #2f6bff;
+  --piece-l: #ff8a00;
   --font-display: 'Avenir Next', 'Segoe UI', ui-rounded, system-ui, sans-serif;
   /* Every UI transition takes its timing from here (QX-028): no one-off numbers.
      Reduced turns slides and scales into plain fades; Off makes everything instant. */

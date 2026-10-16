@@ -449,14 +449,18 @@ export interface AmbientColors {
   readonly pulse: string;
 }
 
-/** The ambient colours on game level `level`: the hue turns each level; always dim. */
+/**
+ * The ambient colours on game level `level`: the hue turns each level; always dim. Dim
+ * enough that the darkest piece (J's blue) still reads 3:1 on a mote over a pulse
+ * (src/ui/vfx.test.ts).
+ */
 export function ambientColors(level: number): AmbientColors {
   const hue = (230 + (Math.max(1, Math.floor(level)) - 1) * 47) % 360;
   return {
     band: hsl(hue, 0.45, 0.08),
     base: hsl(hue, 0.4, 0.04),
-    mote: hsl(hue, 0.5, 0.24),
-    pulse: hsl(hue, 0.5, 0.14),
+    mote: hsl(hue, 0.5, 0.2),
+    pulse: hsl(hue, 0.5, 0.12),
   };
 }
 
