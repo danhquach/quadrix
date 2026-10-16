@@ -5,7 +5,10 @@ import {
   PIECE_VARS,
   blockColors,
   contrast,
+  PIECE_STYLES,
+  PIECE_STYLE_NAMES,
   drawBlock,
+  isPieceStyle,
   luminance,
   parseHex,
   shade,
@@ -22,7 +25,7 @@ const v = (name: string) => {
 };
 
 describe('page palette', () => {
-  const backgrounds = ['--bg-top', '--bg-bottom', '--surface', '--well-bg'];
+  const backgrounds = ['--bg-top', '--bg-bottom', '--surface', '--card', '--button', '--well-bg'];
 
   it.each(['--text', '--muted', '--accent'])(
     '%s meets WCAG AA (4.5:1) on every background',
@@ -103,36 +106,86 @@ describe('color helpers', () => {
 });
 
 describe('drawBlock', () => {
-  /** Records each rectangle drawn. */
+  type Box = [number, number, number, number];
+  /**
+   * Records what each style paints: filled rectangles and rounded paths, each path with
+   * the widest line stroked along it (0 when only filled).
+   */
   const recorder = () => {
-    const rects: [number, number, number, number][] = [];
-    return {
-      rects,
-      ctx: {
-        fillStyle: '' as string | CanvasGradient | CanvasPattern,
-        fillRect: (x: number, y: number, w: number, h: number) => void rects.push([x, y, w, h]),
+    const rects: Box[] = [];
+    const paths: { box: Box; line: number }[] = [];
+    const ctx = {
+      fillStyle: '' as string | CanvasGradient | CanvasPattern,
+      strokeStyle: '' as string | CanvasGradient | CanvasPattern,
+      lineWidth: 1,
+      fillRect: (x: number, y: number, w: number, h: number) => void rects.push([x, y, w, h]),
+      beginPath: () => {},
+      roundRect: (x: number, y: number, w: number, h: number) =>
+        void paths.push({ box: [x, y, w, h], line: 0 }),
+      fill: () => {},
+      stroke: () => {
+        const p = paths.at(-1)!;
+        p.line = Math.max(p.line, ctx.lineWidth);
       },
+      createLinearGradient: () => ({ addColorStop: () => {} }) as unknown as CanvasGradient,
     };
+    return { rects, paths, ctx };
   };
 
-  it.each([1, 2, 5, 8, 24, 31, 64])('stays inside its cell at %ipx', (size) => {
-    for (const k of KINDS) {
-      const { rects, ctx } = recorder();
-      drawBlock(ctx, 100, 200, size, blockColors('#4f80ea'), MARKS[k]);
-      for (const [x, y, w, h] of rects) {
-        expect(w).toBeGreaterThan(0);
-        expect(h).toBeGreaterThan(0);
-        expect(x).toBeGreaterThanOrEqual(100);
-        expect(y).toBeGreaterThanOrEqual(200);
-        expect(x + w).toBeLessThanOrEqual(100 + size);
-        expect(y + h).toBeLessThanOrEqual(200 + size);
+  it.each(PIECE_STYLES.flatMap((st) => [1, 2, 5, 8, 24, 31, 64].map((n) => [st, n] as const)))(
+    '%s stays inside its cell at %ipx',
+    (style, size) => {
+      for (const k of KINDS) {
+        const { rects, paths, ctx } = recorder();
+        drawBlock(ctx, 100, 200, size, blockColors('#4f80ea'), MARKS[k], style);
+        const boxes = [...rects.map((r) => ({ box: r, line: 0 })), ...paths];
+        // Too small for a block once its gap is taken: nothing at all.
+        if (size > 2) expect(boxes.length).toBeGreaterThan(0);
+        for (const { box, line } of boxes) {
+          const [x, y, w, h] = box;
+          const half = line / 2;
+          expect(w).toBeGreaterThanOrEqual(0);
+          expect(h).toBeGreaterThanOrEqual(0);
+          expect(x - half).toBeGreaterThanOrEqual(100);
+          expect(y - half).toBeGreaterThanOrEqual(200);
+          expect(x + w + half).toBeLessThanOrEqual(100 + size);
+          expect(y + h + half).toBeLessThanOrEqual(200 + size);
+        }
       }
-    }
-  });
+    },
+  );
 
-  it('draws bevel, face and the mark', () => {
-    const { rects, ctx } = recorder();
+  it('bevel draws bevel, face and the mark', () => {
+    const { rects, paths, ctx } = recorder();
     drawBlock(ctx, 0, 0, 32, blockColors('#4f80ea'), MARKS.S);
     expect(rects).toHaveLength(3 + MARKS.S.length);
+    expect(paths).toHaveLength(0);
+  });
+
+  it.each(['gem', 'neon'] as const)('%s draws rounded shapes and still the mark', (style) => {
+    const { rects, paths, ctx } = recorder();
+    drawBlock(ctx, 0, 0, 32, blockColors('#4f80ea'), MARKS.S, style);
+    expect(rects).toHaveLength(MARKS.S.length);
+    expect(paths.length).toBeGreaterThan(0);
+  });
+
+  it("neon's lit mark stands out from its dark face", () => {
+    for (const name of PIECE_VARS) {
+      const c = blockColors(v(name));
+      expect(contrast(c.light, c.deep)).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
+describe('piece styles', () => {
+  it('are bevel, gem and neon, each with a name', () => {
+    expect(PIECE_STYLES).toEqual(['bevel', 'gem', 'neon']);
+    for (const st of PIECE_STYLES) expect(PIECE_STYLE_NAMES[st]).toBeTruthy();
+  });
+
+  it('accepts only the listed styles', () => {
+    for (const st of PIECE_STYLES) expect(isPieceStyle(st)).toBe(true);
+    for (const bad of ['', 'Bevel', 'glass', '__proto__', 'toString', null, 1, {}, ['gem']])
+      expect(isPieceStyle(bad)).toBe(false);
   });
 });

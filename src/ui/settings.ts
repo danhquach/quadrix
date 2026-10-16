@@ -3,6 +3,7 @@ import { ACTIONS, type Action } from './gestures.ts';
 import { DEFAULT_KEYS, MUTE_KEY, isBindable, keyLabel, normalKey, type KeyMap } from './keys.ts';
 import { REPEAT_TIMING, type RepeatTiming } from './repeat.ts';
 import type { SaveStorage } from './save.ts';
+import { isPieceStyle, type PieceStyle } from './skin.ts';
 
 export const SETTINGS_KEY = 'quadrix.settings';
 
@@ -21,6 +22,8 @@ export interface Settings {
   readonly musicVolume: number;
   /** How much animation plays over the board. */
   readonly effects: EffectsLevel;
+  /** How blocks are drawn (the Styles tab). */
+  readonly pieceStyle: PieceStyle;
 }
 
 export const DELAY_RANGE = { min: 50, max: 300 } as const;
@@ -39,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfxVolume: 70,
   musicVolume: 50,
   effects: 'full',
+  pieceStyle: 'bevel',
 };
 
 /** The defaults here: Effects start Reduced when the system asks for reduced motion. */
@@ -114,6 +118,7 @@ export function parseSettings(text: string | null, reducedMotion = false): Setti
   const ghost = own(raw, 'ghost');
   const muted = own(raw, 'muted');
   const effects = own(raw, 'effects');
+  const pieceStyle = own(raw, 'pieceStyle');
   return {
     ghost: typeof ghost === 'boolean' ? ghost : DEFAULT_SETTINGS.ghost,
     ghostOpacity: ghostOpacityIn(own(raw, 'ghostOpacity')) ?? DEFAULT_SETTINGS.ghostOpacity,
@@ -124,6 +129,7 @@ export function parseSettings(text: string | null, reducedMotion = false): Setti
     sfxVolume: inRange(own(raw, 'sfxVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.sfxVolume,
     musicVolume: inRange(own(raw, 'musicVolume'), VOLUME_RANGE) ?? DEFAULT_SETTINGS.musicVolume,
     effects: isEffectsLevel(effects) ? effects : defaults.effects,
+    pieceStyle: isPieceStyle(pieceStyle) ? pieceStyle : DEFAULT_SETTINGS.pieceStyle,
   };
 }
 

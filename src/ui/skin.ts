@@ -59,39 +59,78 @@ export function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** How blocks are drawn (Settings, Styles): A bevel, B soft gem, C neon outline. */
+export const PIECE_STYLES = ['bevel', 'gem', 'neon'] as const;
+export type PieceStyle = (typeof PIECE_STYLES)[number];
+/** Names Settings shows for each style. Plain text. */
+export const PIECE_STYLE_NAMES: Readonly<Record<PieceStyle, string>> = {
+  bevel: 'Bevel',
+  gem: 'Soft gem',
+  neon: 'Neon',
+};
+
+export function isPieceStyle(value: unknown): value is PieceStyle {
+  return PIECE_STYLES.includes(value as PieceStyle);
+}
+
 /** One kind's block colors, worked out once from its base color. */
 export interface BlockColors {
   base: string;
   light: string;
   dark: string;
   mark: string;
+  /** Neon: the near-black face and the soft halo round its outline. */
+  deep: string;
+  halo: string;
 }
 
 export function blockColors(base: string): BlockColors {
   const b = parseHex(base) ? base : '#808080';
-  return { base: b, light: shade(b, 0.35), dark: shade(b, -0.35), mark: shade(b, -0.5) };
+  return {
+    base: b,
+    light: shade(b, 0.35),
+    dark: shade(b, -0.35),
+    mark: shade(b, -0.5),
+    deep: shade(b, -0.78),
+    halo: shade(b, -0.45),
+  };
 }
 
-type Fill = Pick<CanvasRenderingContext2D, 'fillStyle' | 'fillRect'>;
+export type Paint = Pick<
+  CanvasRenderingContext2D,
+  | 'fillStyle'
+  | 'fillRect'
+  | 'strokeStyle'
+  | 'lineWidth'
+  | 'beginPath'
+  | 'roundRect'
+  | 'fill'
+  | 'stroke'
+  | 'createLinearGradient'
+>;
 
 /**
- * A shaded block filling the cell at (px, py) of edge `size` (device pixels): a lit
- * top-left bevel, a shadowed bottom-right one, and the kind's mark. A 1px gap keeps
- * neighbouring blocks apart.
+ * A block filling the cell at (px, py) of edge `size` (device pixels), in `style`, with
+ * the kind's mark. A 1px gap keeps neighbouring blocks apart; nothing is drawn outside
+ * the cell.
  */
 export function drawBlock(
-  c: Fill,
+  c: Paint,
   px: number,
   py: number,
   size: number,
   colors: BlockColors,
   marks: readonly Rect[],
+  style: PieceStyle = 'bevel',
 ): void {
   const gap = Math.max(1, Math.round(size / 30));
   const x = px + gap;
   const y = py + gap;
   const s = size - 2 * gap;
   if (s <= 0) return;
+  if (style === 'gem') return drawGem(c, x, y, s, colors, marks);
+  if (style === 'neon') return drawNeon(c, x, y, s, colors, marks);
+  // Bevel: a lit top-left edge, a shadowed bottom-right one.
   const bevel = Math.max(1, Math.round(s / 8));
   c.fillStyle = colors.dark;
   c.fillRect(x, y, s, s);
@@ -99,7 +138,18 @@ export function drawBlock(
   c.fillRect(x, y, s - bevel, s - bevel);
   c.fillStyle = colors.base;
   c.fillRect(x + bevel, y + bevel, s - 2 * bevel, s - 2 * bevel);
-  c.fillStyle = colors.mark;
+  drawMarks(c, x, y, s, colors.mark, marks);
+}
+
+function drawMarks(
+  c: Paint,
+  x: number,
+  y: number,
+  s: number,
+  color: string,
+  marks: readonly Rect[],
+): void {
+  c.fillStyle = color;
   for (const [mx, my, mw, mh] of marks) {
     c.fillRect(
       x + Math.round(mx * s),
@@ -108,4 +158,61 @@ export function drawBlock(
       Math.max(1, Math.round(mh * s)),
     );
   }
+}
+
+/** Soft gem: a rounded block lit from above, with a gloss across its top. */
+function drawGem(
+  c: Paint,
+  x: number,
+  y: number,
+  s: number,
+  colors: BlockColors,
+  marks: readonly Rect[],
+): void {
+  const r = s * 0.22;
+  const rim = Math.max(1, Math.round(s / 16));
+  c.fillStyle = colors.dark;
+  c.beginPath();
+  c.roundRect(x, y, s, s, r);
+  c.fill();
+  const face = c.createLinearGradient(0, y, 0, y + s);
+  face.addColorStop(0, colors.light);
+  face.addColorStop(1, colors.base);
+  c.fillStyle = face;
+  c.beginPath();
+  c.roundRect(x + rim, y + rim, s - 2 * rim, s - 2 * rim, Math.max(0, r - rim));
+  c.fill();
+  c.fillStyle = 'rgb(255 255 255 / 0.25)';
+  c.beginPath();
+  c.roundRect(x + s * 0.16, y + s * 0.1, s * 0.68, s * 0.24, r * 0.6);
+  c.fill();
+  drawMarks(c, x, y, s, colors.mark, marks);
+}
+
+/** Neon: a dark face inside a glowing outline; the mark lights up in the kind's color. */
+function drawNeon(
+  c: Paint,
+  x: number,
+  y: number,
+  s: number,
+  colors: BlockColors,
+  marks: readonly Rect[],
+): void {
+  const r = s * 0.14;
+  c.fillStyle = colors.deep;
+  c.beginPath();
+  c.roundRect(x, y, s, s, r);
+  c.fill();
+  // A stroke straddles its path, so the path sits half the halo inside the block. The
+  // wide dim halo goes first, then the bright line down its middle.
+  const halo = Math.max(1, Math.round(s / 7));
+  c.beginPath();
+  c.roundRect(x + halo / 2, y + halo / 2, s - halo, s - halo, r);
+  c.strokeStyle = colors.halo;
+  c.lineWidth = halo;
+  c.stroke();
+  c.strokeStyle = colors.base;
+  c.lineWidth = Math.max(1, Math.round(s / 14));
+  c.stroke();
+  drawMarks(c, x, y, s, colors.light, marks);
 }
