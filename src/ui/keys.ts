@@ -82,3 +82,16 @@ export function keyAction(
   if (phase === 'running') return { action: repeat ? null : action, preventDefault: true };
   return { action: null, preventDefault: key !== ' ' };
 }
+
+/**
+ * Where a button press goes while Settings may be open over the game. Under Settings
+ * the pad is ignored and the game stays paused, but the top bar's Resume closes
+ * Settings first, as Back then Resume would.
+ */
+export function buttonRoute(
+  action: Action,
+  settingsOpen: boolean,
+): 'act' | 'close-then-act' | 'ignore' {
+  if (!settingsOpen) return 'act';
+  return action === 'pause' ? 'close-then-act' : 'ignore';
+}

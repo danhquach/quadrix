@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_KEYS,
   actionForKey,
+  buttonRoute,
   isBindable,
   isMuteKey,
   keyAction,
@@ -89,6 +90,22 @@ describe('keyAction', () => {
       action: null,
       preventDefault: false,
     });
+  });
+});
+
+describe('buttonRoute', () => {
+  it('acts on every button with Settings closed', () => {
+    for (const a of ['left', 'right', 'rotate', 'softDrop', 'hardDrop', 'pause'] as const)
+      expect(buttonRoute(a, false)).toBe('act');
+  });
+
+  it('closes Settings first for Resume, so the countdown starts', () => {
+    expect(buttonRoute('pause', true)).toBe('close-then-act');
+  });
+
+  it('ignores the pad under Settings, so the game stays paused', () => {
+    for (const a of ['left', 'right', 'rotate', 'softDrop', 'hardDrop'] as const)
+      expect(buttonRoute(a, true)).toBe('ignore');
   });
 });
 

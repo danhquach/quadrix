@@ -21,7 +21,7 @@ import { Motion } from './ui/motion.ts';
 import { Ambient, Shake, drawBlockGlow, rng, vfx } from './ui/vfx.ts';
 import { ACTIONS, GestureTracker, isAction, type Action } from './ui/gestures.ts';
 import { Guide, guideRows, isGuideKey, loadGuideClosed, writeGuideClosed } from './ui/guide.ts';
-import { isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
+import { buttonRoute, isMuteKey, keyAction, keyLabel } from './ui/keys.ts';
 import {
   PAGE,
   ladderPage,
@@ -922,8 +922,10 @@ const keyRepeat = new KeyRepeat(repeatTiming(settings));
 
 /** Apply one player action, whatever its source. */
 function act(action: Action): void {
-  // Under Settings the game stays paused: the Pause button and pad don't reach it.
-  if (!session || session.game.state.over || settingsOpen) return;
+  if (!session || session.game.state.over) return;
+  const route = buttonRoute(action, settingsOpen);
+  if (route === 'ignore') return;
+  if (route === 'close-then-act') closeSettings();
   if (action === 'pause') {
     if (session.phase === 'paused') session.resume(performance.now());
     else pause();
